@@ -122,6 +122,22 @@ def _band_for(size: LabelSize | None, default: int) -> int:
     return default
 
 
+def _require_band_fit(height: int, band: int, size: LabelSize | None) -> None:
+    """Reject content taller than an explicitly requested height band.
+
+    The font auto-fit bottoms out at ``MIN_FONT_PX``, whose line height can
+    still exceed a very small band -- so without this guard the "exact size"
+    option could silently print content taller than requested. (Codex review,
+    PR #3.) No-op when the height is auto (no explicit ``band_dots``).
+    """
+    if size is not None and size.band_dots is not None and height > band:
+        raise ValueError(
+            f"content does not fit the requested height of {band} dots "
+            f"(~{band / DOTS_PER_MM:.1f}mm) even at the minimum font size -- "
+            "increase the height or shorten the text"
+        )
+
+
 def _apply_length(canvas: Image.Image, size: LabelSize | None) -> Image.Image:
     """Center ``canvas`` in a label of exactly ``size.length_dots`` (or no-op)."""
     if size is None or size.length_dots is None:
@@ -280,15 +296,7 @@ def compose_text(
         footprint = block.transpose(Image.Transpose.ROTATE_270)
 
     foot_w, foot_h = footprint.size
-    # With an explicit height, the font auto-fit can bottom out at MIN_FONT_PX
-    # whose line height still exceeds a very small band -- reject rather than
-    # silently print content taller than requested. (Codex review, PR #3.)
-    if size is not None and size.band_dots is not None and foot_h > band:
-        raise ValueError(
-            f"text does not fit the requested height of {band} dots "
-            f"(~{band / DOTS_PER_MM:.1f}mm) even at the minimum font size -- "
-            "increase the height or shorten the text"
-        )
+    _require_band_fit(foot_h, band, size)
 
     width = foot_w + 2 * HORIZONTAL_PADDING_DOTS
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
@@ -476,6 +484,8 @@ def compose_code_label(
         fitted = _fit_code(code, is_square, band)
         cw, ch = fitted.size
         block = _text_block(text, font_path, font_size, band, DEFAULT_FONT_SIZE) if text else None
+        if block:
+            _require_band_fit(block.height, band, size)
         width = 2 * HORIZONTAL_PADDING_DOTS + cw + (GAP_DOTS + block.width if block else 0)
         canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
         canvas.paste(fitted, (HORIZONTAL_PADDING_DOTS, (PRINT_HEAD_DOTS - ch) // 2))

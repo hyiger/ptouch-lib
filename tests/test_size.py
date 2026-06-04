@@ -63,6 +63,16 @@ def test_text_taller_than_requested_height_errors():
         compose_text("HELLO", size=LabelSize.from_mm(30, 1))
 
 
+def test_code_side_text_taller_than_height_errors():
+    # Codex review, PR #3 (round 2): the same guard for a code label's
+    # side-layout text. Wide enough that the length guard doesn't fire first.
+    code = Image.new("L", (20, 20), 0)
+    with pytest.raises(ValueError, match="does not fit the requested height"):
+        compose_code_label(
+            code, is_square=True, text="A\nB\nC", layout="side", size=LabelSize.from_mm(60, 4)
+        )
+
+
 # --------------------------------------------------------------------------- #
 # compose_* honour the size
 # --------------------------------------------------------------------------- #
