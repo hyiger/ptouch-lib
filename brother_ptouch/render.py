@@ -63,6 +63,10 @@ STACK_FONT_SIZE = 28
 STACK_TEXT_FRACTION = 0.4
 #: Floor on the auto-fit font size, so tiny tape never produces 0px text.
 MIN_FONT_PX = 8
+#: Minimum usable height (dots, ~3.4mm) for a code. When stacked text crowds
+#: the code below this, we reject the label rather than emit an unscannably
+#: tiny code (a 1-dot-high barcode, in particular). (Codex review, PR #1.)
+MIN_CODE_DOTS = 24
 
 #: Defensive cap on label length (raster lines), derived from the encoder's
 #: 5 MB byte-stream cap. ~263k lines ~= 37 m of tape -- a runaway render.
@@ -316,8 +320,19 @@ def _fit_code(code: Image.Image, is_square: bool, max_h: int) -> Image.Image:
     Square codes (QR/ArUco) scale by the largest *integer* factor so modules
     stay crisp; barcodes (whose height carries no data) are scaled to exactly
     ``max_h`` with their bar widths -- the data -- preserved.
+
+    Raises ``ValueError`` when ``max_h`` is below :data:`MIN_CODE_DOTS` -- e.g.
+    when stacked text crowds the code out -- rather than emitting an
+    unscannably tiny code. Previously the barcode path clamped to ``max(1,
+    max_h)`` and silently produced a 1-dot-high barcode (Codex review, PR #1).
     """
     w, h = code.size
+    if max_h < MIN_CODE_DOTS:
+        raise ValueError(
+            f"only {max_h} dots remain for the code -- the accompanying text leaves "
+            "too little room. Use fewer / shorter text lines, a smaller font size, "
+            "or --layout side."
+        )
     if is_square:
         factor = max_h // h
         if factor < 1:
@@ -329,7 +344,7 @@ def _fit_code(code: Image.Image, is_square: bool, max_h: int) -> Image.Image:
             code = code.resize((w * factor, h * factor), Image.NEAREST)
         return code
     if h != max_h:
-        code = code.resize((w, max(1, max_h)), Image.NEAREST)
+        code = code.resize((w, max_h), Image.NEAREST)
     return code
 
 
