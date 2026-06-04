@@ -41,6 +41,28 @@ def test_labelsize_partial_axes():
     assert LabelSize.from_mm(height_mm=5).length_dots is None
 
 
+def test_labelsize_rejects_absurd_width():
+    # Codex review, PR #3: a huge width must be rejected before any canvas
+    # allocation, not OOM.
+    with pytest.raises(ValueError, match="safety cap"):
+        LabelSize.from_mm(1_000_000, 5)
+
+
+def test_apply_length_guards_huge_length():
+    from brother_ptouch.render import MAX_RASTER_LINES, _apply_length
+
+    huge = LabelSize(length_dots=MAX_RASTER_LINES + 1)
+    with pytest.raises(ValueError, match="safety cap"):
+        _apply_length(Image.new("L", (10, PRINT_HEAD_DOTS), 255), huge)
+
+
+def test_text_taller_than_requested_height_errors():
+    # Codex review, PR #3: a tiny H band that even MIN_FONT_PX overshoots must
+    # be rejected, not silently drawn taller than requested.
+    with pytest.raises(ValueError, match="does not fit the requested height"):
+        compose_text("HELLO", size=LabelSize.from_mm(30, 1))
+
+
 # --------------------------------------------------------------------------- #
 # compose_* honour the size
 # --------------------------------------------------------------------------- #

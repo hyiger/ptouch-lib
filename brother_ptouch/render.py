@@ -107,6 +107,11 @@ class LabelSize:
             )
         if length is not None and length < 1:
             raise ValueError(f"width {width_mm}mm is too small to print")
+        if length is not None and length > MAX_RASTER_LINES:
+            raise ValueError(
+                f"width {width_mm}mm = {length} dots exceeds the safety cap of "
+                f"{MAX_RASTER_LINES} raster lines (~5 MB / ~{MAX_RASTER_LINES / DOTS_PER_MM:.0f}mm)"
+            )
         return cls(band_dots=band, length_dots=length)
 
 
@@ -122,6 +127,13 @@ def _apply_length(canvas: Image.Image, size: LabelSize | None) -> Image.Image:
     if size is None or size.length_dots is None:
         return canvas
     target = size.length_dots
+    # Guard the allocation: a huge length would allocate a giant canvas here,
+    # before raster_from_composed could enforce the cap. (Codex review, PR #3.)
+    if target > MAX_RASTER_LINES:
+        raise ValueError(
+            f"requested label length {target} dots exceeds the safety cap of "
+            f"{MAX_RASTER_LINES} raster lines (~5 MB)"
+        )
     if canvas.width > target:
         raise ValueError(
             f"content is {canvas.width} dots (~{canvas.width / DOTS_PER_MM:.1f}mm) long, "
@@ -268,6 +280,16 @@ def compose_text(
         footprint = block.transpose(Image.Transpose.ROTATE_270)
 
     foot_w, foot_h = footprint.size
+    # With an explicit height, the font auto-fit can bottom out at MIN_FONT_PX
+    # whose line height still exceeds a very small band -- reject rather than
+    # silently print content taller than requested. (Codex review, PR #3.)
+    if size is not None and size.band_dots is not None and foot_h > band:
+        raise ValueError(
+            f"text does not fit the requested height of {band} dots "
+            f"(~{band / DOTS_PER_MM:.1f}mm) even at the minimum font size -- "
+            "increase the height or shorten the text"
+        )
+
     width = foot_w + 2 * HORIZONTAL_PADDING_DOTS
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
     top = max(0, (PRINT_HEAD_DOTS - foot_h) // 2)
