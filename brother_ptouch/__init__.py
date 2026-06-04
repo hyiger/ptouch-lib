@@ -42,6 +42,8 @@ from .encoder import (
     pack_grayscale_row,
 )
 from .render import (
+    DOTS_PER_MM,
+    LabelSize,
     aruco_to_raster,
     barcode_to_raster,
     compose_aruco,
@@ -78,6 +80,8 @@ __all__ = [
     "compose_image",
     "compose_text",
     "raster_from_composed",
+    "LabelSize",
+    "DOTS_PER_MM",
     # codes
     "qr_image",
     "barcode_image",

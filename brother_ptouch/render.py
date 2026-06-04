@@ -17,6 +17,7 @@ THE MIRROR TRAP (#587, hardware-confirmed)
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
 
@@ -31,6 +32,8 @@ from .encoder import (
 )
 
 __all__ = [
+    "DOTS_PER_MM",
+    "LabelSize",
     "compose_image",
     "compose_text",
     "compose_code_label",
@@ -46,6 +49,9 @@ __all__ = [
     "render_image",
     "render_text",
 ]
+
+#: 180 dpi print head -> dots per millimetre.
+DOTS_PER_MM = 180 / 25.4
 
 #: Horizontal padding (dots, ~2mm) at each end of the printable length.
 HORIZONTAL_PADDING_DOTS = 14
@@ -73,6 +79,59 @@ MIN_CODE_DOTS = 24
 MAX_RASTER_LINES = (MAX_LABEL_BYTES - 200) // (3 + BYTES_PER_RASTER_LINE)
 
 ImageSource = Union[str, "Path", Image.Image]
+
+
+@dataclass(frozen=True)
+class LabelSize:
+    """An explicit physical label size, instead of auto-filling the tape.
+
+    ``band_dots`` is the content height **across** the tape (the content is
+    scaled to it and centered in the 128-dot band; the rest is blank tape).
+    ``length_dots`` is the exact label length **along** the feed (content is
+    centered, padded with blank tape; an over-long content is rejected).
+    Either may be ``None`` to keep the auto behaviour for that axis.
+    """
+
+    band_dots: int | None = None
+    length_dots: int | None = None
+
+    @classmethod
+    def from_mm(cls, width_mm: float | None = None, height_mm: float | None = None) -> LabelSize:
+        """Build from physical millimetres (width = length, height = across tape)."""
+        band = round(height_mm * DOTS_PER_MM) if height_mm is not None else None
+        length = round(width_mm * DOTS_PER_MM) if width_mm is not None else None
+        if band is not None and not (1 <= band <= PRINT_HEAD_DOTS):
+            raise ValueError(
+                f"height {height_mm}mm = {band} dots is outside the printable tape "
+                f"width (1..{PRINT_HEAD_DOTS} dots, ~{PRINT_HEAD_DOTS / DOTS_PER_MM:.1f}mm)"
+            )
+        if length is not None and length < 1:
+            raise ValueError(f"width {width_mm}mm is too small to print")
+        return cls(band_dots=band, length_dots=length)
+
+
+def _band_for(size: LabelSize | None, default: int) -> int:
+    """The content band height to fit into, honoring an explicit size."""
+    if size is not None and size.band_dots is not None:
+        return size.band_dots
+    return default
+
+
+def _apply_length(canvas: Image.Image, size: LabelSize | None) -> Image.Image:
+    """Center ``canvas`` in a label of exactly ``size.length_dots`` (or no-op)."""
+    if size is None or size.length_dots is None:
+        return canvas
+    target = size.length_dots
+    if canvas.width > target:
+        raise ValueError(
+            f"content is {canvas.width} dots (~{canvas.width / DOTS_PER_MM:.1f}mm) long, "
+            f"exceeding the requested label length of {target} dots "
+            f"(~{target / DOTS_PER_MM:.1f}mm). Widen the size or shorten the content "
+            "(e.g. a smaller --font-size)."
+        )
+    out = Image.new("L", (target, PRINT_HEAD_DOTS), 255)
+    out.paste(canvas, ((target - canvas.width) // 2, 0))
+    return out
 
 # System sans-serif candidates, tried in order before falling back to the
 # scalable font Pillow bundles (DejaVuSans via load_default(size=...)).
@@ -173,6 +232,7 @@ def compose_text(
     font_path: str | None = None,
     font_size: int | None = None,
     orientation: str = "horizontal",
+    size: LabelSize | None = None,
 ) -> Image.Image:
     """Compose a text label into a ``length x 128`` ``"L"`` image in
     human-reading orientation (height = the 128-dot tape width).
@@ -185,6 +245,8 @@ def compose_text(
             omitted a sensible default is auto-fit from scratch.
         orientation: ``"horizontal"`` (reads along the label length) or
             ``"vertical"`` (reads across the tape).
+        size: An explicit :class:`LabelSize` to fit the text into instead of
+            the full tape band; ``None`` keeps the auto behaviour.
 
     Returns:
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
@@ -192,7 +254,7 @@ def compose_text(
     if orientation not in ("horizontal", "vertical"):
         raise ValueError(f"orientation must be 'horizontal' or 'vertical', got {orientation!r}")
     lines = _split_lines(text)
-    band = PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS
+    band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
     base_px = font_size if font_size else DEFAULT_FONT_SIZE
 
     if orientation == "horizontal":
@@ -210,10 +272,10 @@ def compose_text(
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
     top = max(0, (PRINT_HEAD_DOTS - foot_h) // 2)
     canvas.paste(footprint, (HORIZONTAL_PADDING_DOTS, top))
-    return canvas
+    return _apply_length(canvas, size)
 
 
-def compose_image(source: ImageSource) -> Image.Image:
+def compose_image(source: ImageSource, *, size: LabelSize | None = None) -> Image.Image:
     """Compose an image label into a ``length x 128`` ``"L"`` image.
 
     The image is converted to grayscale and scaled so its height fills the
@@ -223,6 +285,9 @@ def compose_image(source: ImageSource) -> Image.Image:
 
     Args:
         source: A file path or an already-open Pillow ``Image``.
+        size: An explicit :class:`LabelSize`; its ``band_dots`` scales the image
+            height to a sub-band (centered on the tape) and ``length_dots`` sets
+            the exact label length. ``None`` keeps the auto behaviour.
 
     Returns:
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
@@ -232,11 +297,15 @@ def compose_image(source: ImageSource) -> Image.Image:
     w, h = img.size
     if h == 0 or w == 0:
         raise ValueError("source image has a zero dimension")
-    new_h = PRINT_HEAD_DOTS
-    new_w = max(1, round(w * PRINT_HEAD_DOTS / h))
-    if (new_w, new_h) != (w, h):
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-    return img
+    band = _band_for(size, PRINT_HEAD_DOTS)
+    new_w = max(1, round(w * band / h))
+    if (new_w, band) != (w, h):
+        img = img.resize((new_w, band), Image.LANCZOS)
+    if band != PRINT_HEAD_DOTS:
+        canvas = Image.new("L", (new_w, PRINT_HEAD_DOTS), 255)
+        canvas.paste(img, (0, (PRINT_HEAD_DOTS - band) // 2))
+        img = canvas
+    return _apply_length(img, size)
 
 
 def raster_from_composed(composed: Image.Image) -> tuple[bytes, int]:
@@ -287,9 +356,9 @@ def raster_from_composed(composed: Image.Image) -> tuple[bytes, int]:
     return bitmap, raster_lines
 
 
-def image_to_raster(source: ImageSource) -> tuple[bytes, int]:
+def image_to_raster(source: ImageSource, *, size: LabelSize | None = None) -> tuple[bytes, int]:
     """Render an image file/object straight to ``(bitmap, raster_lines)``."""
-    return raster_from_composed(compose_image(source))
+    return raster_from_composed(compose_image(source, size=size))
 
 
 def text_to_raster(
@@ -298,10 +367,11 @@ def text_to_raster(
     font_path: str | None = None,
     font_size: int | None = None,
     orientation: str = "horizontal",
+    size: LabelSize | None = None,
 ) -> tuple[bytes, int]:
     """Render text straight to ``(bitmap, raster_lines)``."""
     composed = compose_text(
-        text, font_path=font_path, font_size=font_size, orientation=orientation
+        text, font_path=font_path, font_size=font_size, orientation=orientation, size=size
     )
     return raster_from_composed(composed)
 
@@ -356,6 +426,7 @@ def compose_code_label(
     layout: str = "side",
     font_path: str | None = None,
     font_size: int | None = None,
+    size: LabelSize | None = None,
 ) -> Image.Image:
     """Compose a code (QR/barcode/ArUco) -- optionally with a text string --
     into a ``length x 128`` ``"L"`` image in human-reading orientation.
@@ -368,6 +439,8 @@ def compose_code_label(
         layout: ``"side"`` (code and text side by side along the length) or
             ``"stack"`` (code above, text below, sharing the tape width).
         font_path, font_size: Font for the accompanying text.
+        size: An explicit :class:`LabelSize` to fit into instead of the full
+            tape band; ``None`` keeps the auto behaviour.
 
     Returns:
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
@@ -375,7 +448,7 @@ def compose_code_label(
     if layout not in ("side", "stack"):
         raise ValueError(f"layout must be 'side' or 'stack', got {layout!r}")
     text = text if (text and text.strip()) else None
-    band = PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS
+    band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
 
     if layout == "side":
         fitted = _fit_code(code, is_square, band)
@@ -387,9 +460,9 @@ def compose_code_label(
         if block:
             x = HORIZONTAL_PADDING_DOTS + cw + GAP_DOTS
             canvas.paste(block, (x, (PRINT_HEAD_DOTS - block.height) // 2))
-        return canvas
+        return _apply_length(canvas, size)
 
-    # stack: code on top, text below, sharing the 128-dot band.
+    # stack: code on top, text below, sharing the band.
     if text:
         block = _text_block(text, font_path, font_size, round(band * STACK_TEXT_FRACTION), STACK_FONT_SIZE)
         fitted = _fit_code(code, is_square, band - block.height - GAP_DOTS)
@@ -400,14 +473,14 @@ def compose_code_label(
         top = (PRINT_HEAD_DOTS - content_h) // 2
         canvas.paste(fitted, ((width - cw) // 2, top))
         canvas.paste(block, ((width - block.width) // 2, top + ch + GAP_DOTS))
-        return canvas
+        return _apply_length(canvas, size)
 
     fitted = _fit_code(code, is_square, band)
     cw, ch = fitted.size
     width = cw + 2 * HORIZONTAL_PADDING_DOTS
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
     canvas.paste(fitted, ((width - cw) // 2, (PRINT_HEAD_DOTS - ch) // 2))
-    return canvas
+    return _apply_length(canvas, size)
 
 
 def compose_qr(
@@ -419,11 +492,13 @@ def compose_qr(
     layout: str = "side",
     font_path: str | None = None,
     font_size: int | None = None,
+    size: LabelSize | None = None,
 ) -> Image.Image:
     """Compose a QR code (optionally with text) into a printable label image."""
     img = codes.qr_image(data, error_correction=error_correction, version=version)
     return compose_code_label(
-        img, is_square=True, text=text, layout=layout, font_path=font_path, font_size=font_size
+        img, is_square=True, text=text, layout=layout,
+        font_path=font_path, font_size=font_size, size=size,
     )
 
 
@@ -435,11 +510,13 @@ def compose_barcode(
     layout: str = "side",
     font_path: str | None = None,
     font_size: int | None = None,
+    size: LabelSize | None = None,
 ) -> Image.Image:
     """Compose a 1D barcode (optionally with text) into a printable label image."""
     img = codes.barcode_image(data, symbology=symbology)
     return compose_code_label(
-        img, is_square=False, text=text, layout=layout, font_path=font_path, font_size=font_size
+        img, is_square=False, text=text, layout=layout,
+        font_path=font_path, font_size=font_size, size=size,
     )
 
 
@@ -451,11 +528,13 @@ def compose_aruco(
     layout: str = "side",
     font_path: str | None = None,
     font_size: int | None = None,
+    size: LabelSize | None = None,
 ) -> Image.Image:
     """Compose an ArUco marker (optionally with text) into a printable label image."""
     img = codes.aruco_image(marker_id, dictionary=dictionary)
     return compose_code_label(
-        img, is_square=True, text=text, layout=layout, font_path=font_path, font_size=font_size
+        img, is_square=True, text=text, layout=layout,
+        font_path=font_path, font_size=font_size, size=size,
     )
 
 
