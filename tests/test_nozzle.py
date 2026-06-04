@@ -56,7 +56,7 @@ def test_every_marker_normalizes_to_itself():
 
 @pytest.mark.parametrize(
     "raw,expected",
-    [("0.4", "0.4"), ("WC0.6", "WC.6"), ("HF0.8", "HF.8"), ("HFWC0.4", "HF/WC.4")],
+    [("0.4", "0.4"), ("WC0.6", "WC.6"), ("HF0.8", "HF.8"), ("HFWC0.4", "HF\nWC.4")],
 )
 def test_nozzle_text(raw, expected):
     assert nozzle_text(raw) == expected

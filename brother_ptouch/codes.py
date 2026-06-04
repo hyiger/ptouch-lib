@@ -232,11 +232,12 @@ def aruco_image(
 # white module (the only part visible against the black heat-sink); `.` is black.
 #
 # Decoded 2026-06-04 from Bambu's catalog nozzle photos by grid registration
-# (two independent fitters + visual QC). The standard and HF reads are sharp
-# (large source images); the WC / HF-WC markers come from smaller, lower-res
-# photos, so a couple of their data bits are good-but-not-100%-certain and may be
-# refined from close-up macro shots. (The WC glyph is also carried by some
-# third-party hardened nozzles, e.g. Diamondback.)
+# (two independent fitters + visual QC), then confirmed against close-up macro
+# shots of physical nozzles: WC0.4/0.6/0.8 matched Diamondback DB.4/.6/.8 nozzles
+# bit-for-bit (they carry the identical glyph), and HFWC0.4/0.6/0.8 matched
+# directly -- so all 13 are verified. (The WC glyph being shared by third-party
+# hardened nozzles like Diamondback is what lets a WC label make the H2D accept a
+# DB nozzle.)
 NOZZLE_MARKERS: dict[str, tuple[str, ...]] = {
     "0.2":     ("#...##.", "###..##", "#.#..##"),
     "0.4":     ("#...##.", "#....#.", "..#.###"),
@@ -294,14 +295,16 @@ def nozzle_text(nozzle: str) -> str:
     """The human-readable text printed on that nozzle (e.g. ``WC0.6`` -> ``"WC.6"``).
 
     Matches the text on the physical nozzle so a replica label's text agrees with
-    its marker (the camera check reportedly compares both).
+    its marker (the camera check reportedly compares both). HF-WC nozzles print it
+    as two lines (``HF`` over ``WC.x``), returned with an embedded newline.
     """
     key = normalize_nozzle(nozzle)
     material, _, diameter = key.partition("0.")
     if not material:
         return f"0.{diameter}"
-    label = "HF/WC" if material == "HFWC" else material
-    return f"{label}.{diameter}"
+    if material == "HFWC":
+        return f"HF\nWC.{diameter}"
+    return f"{material}.{diameter}"
 
 
 def nozzle_image(nozzle: str, *, quiet_zone_modules: int = 1) -> Image.Image:
