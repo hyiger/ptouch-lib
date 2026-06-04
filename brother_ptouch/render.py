@@ -416,20 +416,22 @@ def _text_block(text, font_path, font_size, max_h, default_size):
     return _render_text_block(font, lines)
 
 
-def _fit_code(code: Image.Image, is_square: bool, max_h: int) -> Image.Image:
+def _fit_code(code: Image.Image, is_square: bool, max_h: int, min_dots: int = MIN_CODE_DOTS) -> Image.Image:
     """Scale a code image to fit ``max_h`` dots tall.
 
     Square codes (QR/ArUco) scale by the largest *integer* factor so modules
     stay crisp; barcodes (whose height carries no data) are scaled to exactly
     ``max_h`` with their bar widths -- the data -- preserved.
 
-    Raises ``ValueError`` when ``max_h`` is below :data:`MIN_CODE_DOTS` -- e.g.
-    when stacked text crowds the code out -- rather than emitting an
-    unscannably tiny code. Previously the barcode path clamped to ``max(1,
-    max_h)`` and silently produced a 1-dot-high barcode (Codex review, PR #1).
+    Raises ``ValueError`` when ``max_h`` is below ``min_dots`` (default
+    :data:`MIN_CODE_DOTS`) -- e.g. when stacked text crowds the code out --
+    rather than emitting an unscannably tiny code. Previously the barcode path
+    clamped to ``max(1, max_h)`` and silently produced a 1-dot-high barcode
+    (Codex review, PR #1). Nozzle markers pass a smaller ``min_dots`` because
+    they are reproduced at the nozzle's real (sub-3mm) physical size.
     """
     w, h = code.size
-    if max_h < MIN_CODE_DOTS:
+    if max_h < min_dots:
         raise ValueError(
             f"only {max_h} dots remain for the code -- the accompanying text leaves "
             "too little room. Use fewer / shorter text lines, a smaller font size, "
@@ -460,6 +462,7 @@ def compose_code_label(
     font_size: int | None = None,
     size: LabelSize | None = None,
     pad: int | None = None,
+    min_code_dots: int | None = None,
 ) -> Image.Image:
     """Compose a code (QR/barcode/ArUco) -- optionally with a text string --
     into a ``length x 128`` ``"L"`` image in human-reading orientation.
@@ -477,6 +480,9 @@ def compose_code_label(
         pad: End padding (dots) at each end of the length; ``None`` uses the
             default ~2mm. Pass ``0`` for codes that supply their own quiet zone
             and set an exact length via ``size`` (e.g. nozzle markers).
+        min_code_dots: Minimum code height (dots) before raising; ``None`` uses
+            :data:`MIN_CODE_DOTS`. Nozzle markers pass a small value to allow
+            reproduction at the nozzle's real (sub-3mm) size.
 
     Returns:
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
@@ -484,11 +490,12 @@ def compose_code_label(
     if layout not in ("side", "stack"):
         raise ValueError(f"layout must be 'side' or 'stack', got {layout!r}")
     pad = HORIZONTAL_PADDING_DOTS if pad is None else pad
+    mcd = MIN_CODE_DOTS if min_code_dots is None else min_code_dots
     text = text if (text and text.strip()) else None
     band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
 
     if layout == "side":
-        fitted = _fit_code(code, is_square, band)
+        fitted = _fit_code(code, is_square, band, mcd)
         cw, ch = fitted.size
         block = _text_block(text, font_path, font_size, band, DEFAULT_FONT_SIZE) if text else None
         if block:
@@ -504,7 +511,7 @@ def compose_code_label(
     # stack: code on top, text below, sharing the band.
     if text:
         block = _text_block(text, font_path, font_size, round(band * STACK_TEXT_FRACTION), STACK_FONT_SIZE)
-        fitted = _fit_code(code, is_square, band - block.height - GAP_DOTS)
+        fitted = _fit_code(code, is_square, band - block.height - GAP_DOTS, mcd)
         cw, ch = fitted.size
         content_h = ch + GAP_DOTS + block.height
         width = max(cw, block.width) + 2 * pad
@@ -514,7 +521,7 @@ def compose_code_label(
         canvas.paste(block, ((width - block.width) // 2, top + ch + GAP_DOTS))
         return _apply_length(canvas, size)
 
-    fitted = _fit_code(code, is_square, band)
+    fitted = _fit_code(code, is_square, band, mcd)
     cw, ch = fitted.size
     width = cw + 2 * pad
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
@@ -620,6 +627,10 @@ def compose_nozzle(
         # nozzle label sets its exact length, so skip the ~2mm end padding that
         # would otherwise fight a small physical size.
         pad=0,
+        # The nozzle marker is reproduced at the nozzle's real size (~2.2mm /
+        # ~16 dots tall), well under the QR/barcode MIN_CODE_DOTS floor; the
+        # marker height itself is the only real lower bound.
+        min_code_dots=img.height,
     )
     if invert:
         composed = ImageOps.invert(composed if composed.mode == "L" else composed.convert("L"))

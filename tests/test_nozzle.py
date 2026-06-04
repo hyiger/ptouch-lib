@@ -14,7 +14,7 @@ from brother_ptouch.codes import (
     nozzle_text,
 )
 from brother_ptouch.encoder import PRINT_HEAD_DOTS, encode_label
-from brother_ptouch.render import compose_nozzle, raster_from_composed
+from brother_ptouch.render import LabelSize, compose_nozzle, raster_from_composed
 from brother_ptouch.simulator import decode, to_preview_image
 
 
@@ -116,6 +116,17 @@ def test_invert_default_gives_black_field():
 def test_no_invert_gives_white_field():
     img = compose_nozzle("WC0.4", text=None, invert=False)
     assert img.load()[0, 0] == 255
+
+
+def test_true_size_marker_below_min_code_dots():
+    # The real nozzle marker is ~2.2mm (~15 dots) tall -- under the QR/barcode
+    # MIN_CODE_DOTS floor. The nozzle path must still render it (not raise).
+    size = LabelSize.from_mm(width_mm=5.2, height_mm=2.2)
+    img = compose_nozzle("WC0.4", text=None, invert=False, quiet_zone_modules=0, size=size)
+    # marker scaled to ~5 dots/module -> ~15 dots tall, well under MIN_CODE_DOTS (24)
+    ys = [y for y in range(img.height) if any(img.load()[x, y] < 128 for x in range(img.width))]
+    marker_h = ys[-1] - ys[0] + 1
+    assert 12 <= marker_h <= 20
 
 
 def test_invert_is_pixelwise_complement():
