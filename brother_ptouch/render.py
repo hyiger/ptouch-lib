@@ -40,12 +40,14 @@ __all__ = [
     "compose_qr",
     "compose_barcode",
     "compose_aruco",
+    "compose_nozzle",
     "raster_from_composed",
     "image_to_raster",
     "text_to_raster",
     "qr_to_raster",
     "barcode_to_raster",
     "aruco_to_raster",
+    "nozzle_to_raster",
     "render_image",
     "render_text",
 ]
@@ -457,6 +459,7 @@ def compose_code_label(
     font_path: str | None = None,
     font_size: int | None = None,
     size: LabelSize | None = None,
+    pad: int | None = None,
 ) -> Image.Image:
     """Compose a code (QR/barcode/ArUco) -- optionally with a text string --
     into a ``length x 128`` ``"L"`` image in human-reading orientation.
@@ -471,12 +474,16 @@ def compose_code_label(
         font_path, font_size: Font for the accompanying text.
         size: An explicit :class:`LabelSize` to fit into instead of the full
             tape band; ``None`` keeps the auto behaviour.
+        pad: End padding (dots) at each end of the length; ``None`` uses the
+            default ~2mm. Pass ``0`` for codes that supply their own quiet zone
+            and set an exact length via ``size`` (e.g. nozzle markers).
 
     Returns:
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
     """
     if layout not in ("side", "stack"):
         raise ValueError(f"layout must be 'side' or 'stack', got {layout!r}")
+    pad = HORIZONTAL_PADDING_DOTS if pad is None else pad
     text = text if (text and text.strip()) else None
     band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
 
@@ -486,11 +493,11 @@ def compose_code_label(
         block = _text_block(text, font_path, font_size, band, DEFAULT_FONT_SIZE) if text else None
         if block:
             _require_band_fit(block.height, band, size)
-        width = 2 * HORIZONTAL_PADDING_DOTS + cw + (GAP_DOTS + block.width if block else 0)
+        width = 2 * pad + cw + (GAP_DOTS + block.width if block else 0)
         canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
-        canvas.paste(fitted, (HORIZONTAL_PADDING_DOTS, (PRINT_HEAD_DOTS - ch) // 2))
+        canvas.paste(fitted, (pad, (PRINT_HEAD_DOTS - ch) // 2))
         if block:
-            x = HORIZONTAL_PADDING_DOTS + cw + GAP_DOTS
+            x = pad + cw + GAP_DOTS
             canvas.paste(block, (x, (PRINT_HEAD_DOTS - block.height) // 2))
         return _apply_length(canvas, size)
 
@@ -500,7 +507,7 @@ def compose_code_label(
         fitted = _fit_code(code, is_square, band - block.height - GAP_DOTS)
         cw, ch = fitted.size
         content_h = ch + GAP_DOTS + block.height
-        width = max(cw, block.width) + 2 * HORIZONTAL_PADDING_DOTS
+        width = max(cw, block.width) + 2 * pad
         canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
         top = (PRINT_HEAD_DOTS - content_h) // 2
         canvas.paste(fitted, ((width - cw) // 2, top))
@@ -509,7 +516,7 @@ def compose_code_label(
 
     fitted = _fit_code(code, is_square, band)
     cw, ch = fitted.size
-    width = cw + 2 * HORIZONTAL_PADDING_DOTS
+    width = cw + 2 * pad
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
     canvas.paste(fitted, ((width - cw) // 2, (PRINT_HEAD_DOTS - ch) // 2))
     return _apply_length(canvas, size)
@@ -570,6 +577,55 @@ def compose_aruco(
     )
 
 
+def compose_nozzle(
+    nozzle: str,
+    *,
+    text: str | None = None,
+    invert: bool = True,
+    quiet_zone_modules: int = 1,
+    layout: str = "side",
+    font_path: str | None = None,
+    font_size: int | None = None,
+    size: LabelSize | None = None,
+) -> Image.Image:
+    """Compose a Bambu nozzle marker (optionally with text) into a printable label.
+
+    The nozzle marker is physically white-on-black (white modules on the black
+    heat-sink), so by default the whole composed label is **inverted** -- a white
+    marker (and white text) on a solid black field -- to match the nozzle when
+    printed on ordinary black-on-white tape. Pass ``invert=False`` for
+    white-on-black tape (already black where the tape shows through).
+
+    Because the marker is only a few millimetres on the nozzle, you almost always
+    want an explicit ``size`` (e.g. ``LabelSize.from_mm(...)``); the auto fill
+    would scale it to the full tape width.
+
+    Args:
+        nozzle: A nozzle name; see :func:`brother_ptouch.codes.normalize_nozzle`.
+        text: Optional text printed alongside the marker (e.g. ``"WC.4"``).
+        invert: Invert the composed label to white-on-black (default ``True``).
+        quiet_zone_modules: Black border around the marker, in marker modules.
+        layout: ``"side"`` (text beside the marker) or ``"stack"`` (text below).
+        font_path, font_size: Font for the accompanying text.
+        size: An explicit :class:`LabelSize`; ``None`` keeps the auto behaviour.
+
+    Returns:
+        A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
+    """
+    img = codes.nozzle_image(nozzle, quiet_zone_modules=quiet_zone_modules)
+    composed = compose_code_label(
+        img, is_square=True, text=text, layout=layout,
+        font_path=font_path, font_size=font_size, size=size,
+        # The marker carries its own (module-scaled) quiet zone and a sized
+        # nozzle label sets its exact length, so skip the ~2mm end padding that
+        # would otherwise fight a small physical size.
+        pad=0,
+    )
+    if invert:
+        composed = ImageOps.invert(composed if composed.mode == "L" else composed.convert("L"))
+    return composed
+
+
 def qr_to_raster(data: str, **kwargs) -> tuple[bytes, int]:
     """Render a QR label straight to ``(bitmap, raster_lines)``."""
     return raster_from_composed(compose_qr(data, **kwargs))
@@ -583,6 +639,11 @@ def barcode_to_raster(data: str, **kwargs) -> tuple[bytes, int]:
 def aruco_to_raster(marker_id: int, **kwargs) -> tuple[bytes, int]:
     """Render an ArUco label straight to ``(bitmap, raster_lines)``."""
     return raster_from_composed(compose_aruco(marker_id, **kwargs))
+
+
+def nozzle_to_raster(nozzle: str, **kwargs) -> tuple[bytes, int]:
+    """Render a Bambu nozzle-marker label straight to ``(bitmap, raster_lines)``."""
+    return raster_from_composed(compose_nozzle(nozzle, **kwargs))
 
 
 # Public-API aliases matching the package's documented surface.

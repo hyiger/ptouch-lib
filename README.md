@@ -53,6 +53,7 @@ ptouch text    --text STR     [--font PATH] [--font-size N] [--orientation horiz
 ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
 ptouch barcode --data STR     [--symbology code128|ean13|...]  [code opts] [output opts]
 ptouch aruco   --id N         [--dict 4X4_50|5X5_100|...]      [code opts] [output opts]
+ptouch nozzle  NAME           [--no-text] [--no-invert] [--quiet-zone N] [code opts] [output opts]
 ptouch list                   # list reachable printers
 
 # code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
@@ -120,6 +121,36 @@ Notes:
 - **ArUco** `--dict` is any OpenCV predefined dictionary, with or without the
   `DICT_` prefix (`4X4_50`, `5X5_100`, `6X6_250`, `7X7_1000`, `APRILTAG_36h11`, …);
   a white quiet zone is baked in so detectors can find it.
+
+### Bambu nozzle markers
+
+`ptouch nozzle NAME` reproduces the small marker the Bambu H2D/H2C hot-end camera
+reads to identify the installed nozzle. These are **not** ArUco — they are a
+custom Bambu 3×7 module grid (decoded from Bambu's catalog photos) carried in a
+built-in table, so the command needs no extra dependencies (Pillow only).
+
+`NAME` accepts forms like `WC0.4`, `wc.4`, `WC 0.4`, `wc4`, `0.4`, `HF0.6`,
+`HFWC0.8`. Materials: stainless (none), `HF` (high flow), `WC` (tungsten
+carbide), `HFWC`; diameters `0.2`/`0.4`/`0.6`/`0.8` (only `0.2` for stainless).
+
+The marker is physically white-on-black, so by default the whole label is
+**inverted** — a white marker (and white text) on a solid black field — to match
+the nozzle on ordinary black-on-white tape. Use `--no-invert` for white-on-black
+tape. The text matching the nozzle is added by default (the camera reportedly
+checks marker *and* text); `--no-text` prints the marker alone.
+
+```bash
+# A WC 0.4 nozzle marker + "WC.4" text, inverted for black-on-white tape
+ptouch nozzle WC0.4 --out /tmp/nz.bin --preview /tmp/nz.png
+
+# Marker only, at an exact small physical size to cover a nozzle's own marker
+ptouch nozzle WC0.4 --no-text --size 8x4 --out /tmp/nz.bin
+```
+
+The marker is only a few millimetres on the nozzle, so pair it with `--size`
+(see below) for an exact physical size; the auto fill scales it to the full tape
+width. The WC / HF-WC bit patterns came from lower-resolution source photos and
+may be refined.
 
 ### Exact size
 

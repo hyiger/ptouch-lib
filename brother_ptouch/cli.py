@@ -5,6 +5,7 @@
     ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
     ptouch barcode --data STR     [--symbology code128|ean13|...] [code opts] [output opts]
     ptouch aruco   --id N         [--dict 4X4_50|...] [code opts] [output opts]
+    ptouch nozzle  NAME           [--no-text] [--no-invert] [code opts] [output opts]
     ptouch list                   # list reachable printers
 
   code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
@@ -32,6 +33,7 @@ from .render import (
     compose_aruco,
     compose_barcode,
     compose_image,
+    compose_nozzle,
     compose_qr,
     compose_text,
     raster_from_composed,
@@ -168,6 +170,24 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_code_opts(p_ar)
     _add_output_args(p_ar)
 
+    p_nz = sub.add_parser("nozzle", help="print a Bambu nozzle marker (white-on-black)")
+    p_nz.add_argument("nozzle", help="nozzle name, e.g. WC0.4, HF0.6, HFWC0.8, 0.4")
+    p_nz.add_argument(
+        "--no-text", dest="no_text", action="store_true",
+        help="print the marker only, without the human-readable text",
+    )
+    p_nz.add_argument(
+        "--invert", default=True, action=argparse.BooleanOptionalAction,
+        help="invert to white-on-black for ordinary black-on-white tape "
+             "(default); --no-invert for white-on-black tape",
+    )
+    p_nz.add_argument(
+        "--quiet-zone", type=int, default=1, dest="quiet_zone",
+        help="black border around the marker, in modules (default 1)",
+    )
+    _add_code_opts(p_nz)
+    _add_output_args(p_nz)
+
     sub.add_parser("list", help="list reachable printers")
     return parser
 
@@ -290,6 +310,25 @@ def _cmd_aruco(args: argparse.Namespace) -> int:
     return _emit(args, cfg, bitmap, raster_lines, composed)
 
 
+def _cmd_nozzle(args: argparse.Namespace) -> int:
+    from .codes import nozzle_text
+
+    cfg = resolve_config(args.config)
+    text = None if args.no_text else _first(args.text, nozzle_text(args.nozzle))
+    composed = compose_nozzle(
+        args.nozzle,
+        text=text,
+        invert=args.invert,
+        quiet_zone_modules=args.quiet_zone,
+        layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
+        font_path=_first(args.font, cfg.font),
+        font_size=_first(args.font_size, cfg.font_size),
+        size=_parse_size(args.size),
+    )
+    bitmap, raster_lines = raster_from_composed(composed)
+    return _emit(args, cfg, bitmap, raster_lines, composed)
+
+
 def _cmd_list(args: argparse.Namespace) -> int:
     from .transport import list_printers
 
@@ -313,6 +352,7 @@ def main(argv: list[str] | None = None) -> int:
         "qr": _cmd_qr,
         "barcode": _cmd_barcode,
         "aruco": _cmd_aruco,
+        "nozzle": _cmd_nozzle,
         "list": _cmd_list,
     }
     try:

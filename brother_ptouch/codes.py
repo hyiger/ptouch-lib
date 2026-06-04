@@ -24,9 +24,13 @@ __all__ = [
     "QR_ERROR_CORRECTIONS",
     "DEFAULT_BARCODE_SYMBOLOGY",
     "DEFAULT_ARUCO_DICT",
+    "NOZZLE_MARKERS",
     "qr_image",
     "barcode_image",
     "aruco_image",
+    "nozzle_image",
+    "nozzle_text",
+    "normalize_nozzle",
 ]
 
 #: 180 dpi print head -> dots per mm (python-barcode wants mm + dpi).
@@ -213,4 +217,112 @@ def aruco_image(
     img = Image.fromarray(np.asarray(arr)).convert("L")
     if quiet_zone_bits > 0:
         img = ImageOps.expand(img, border=quiet_zone_bits, fill=255)
+    return img
+
+
+# --------------------------------------------------------------------------- #
+# Bambu Lab nozzle markers
+# --------------------------------------------------------------------------- #
+#
+# The Bambu H2D/H2C hot-end camera identifies the installed nozzle from a small
+# marker on the matte-black heat-sink face. Unlike Bambu's *build-plate* markers
+# (standard OpenCV ArUco), the nozzle markers are a **custom Bambu code**: a
+# 3-row x 7-column grid of square modules -- two 3x3 glyphs split by a blank
+# column -- with a constant finder row 0 (`#...##.`) on every nozzle. `#` is a
+# white module (the only part visible against the black heat-sink); `.` is black.
+#
+# Decoded 2026-06-04 from Bambu's catalog nozzle photos by grid registration
+# (two independent fitters + visual QC). The standard and HF reads are sharp
+# (large source images); the WC / HF-WC markers come from smaller, lower-res
+# photos, so a couple of their data bits are good-but-not-100%-certain and may be
+# refined from close-up macro shots. (The WC glyph is also carried by some
+# third-party hardened nozzles, e.g. Diamondback.)
+NOZZLE_MARKERS: dict[str, tuple[str, ...]] = {
+    "0.2":     ("#...##.", "###..##", "#.#..##"),
+    "0.4":     ("#...##.", "#....#.", "..#.###"),
+    "0.6":     ("#...##.", "#.#..#.", ".#...##"),
+    "0.8":     ("#...##.", "#.#...#", "..#.###"),
+    "HF0.4":   ("#...##.", ".....#.", "###.###"),
+    "HF0.6":   ("#...##.", ".....#.", ".##..##"),
+    "HF0.8":   ("#...##.", ".##...#", "###.###"),
+    "WC0.4":   ("#...##.", ".##..##", "###.#.#"),
+    "WC0.6":   ("#...##.", ".##..##", ".##...#"),
+    "WC0.8":   ("#...##.", ".#...#.", "###.#.#"),
+    "HFWC0.4": ("#...##.", ".##..##", ".##.###"),
+    "HFWC0.6": ("#...##.", "..#...#", "###.#.#"),
+    "HFWC0.8": ("#...##.", ".#...#.", ".##...#"),
+}
+
+
+def normalize_nozzle(nozzle: str) -> str:
+    """Resolve a user-typed nozzle name to a canonical :data:`NOZZLE_MARKERS` key.
+
+    Accepts forms like ``"WC0.4"``, ``"wc.4"``, ``"WC 0.4"``, ``"wc4"`` (-> the
+    canonical ``"WC0.4"``) and ``"0.4"``, ``".4"``, ``"4"`` (-> ``"0.4"``).
+    Materials: none (stainless), ``HF`` (high flow), ``WC`` (tungsten carbide),
+    ``HFWC`` (high-flow tungsten carbide). Diameters: 0.2/0.4/0.6/0.8 (only 0.2
+    for stainless).
+
+    Raises:
+        ValueError: if the name has no single 2/4/6/8 diameter digit or names a
+            nozzle that does not exist (e.g. ``HF0.2``).
+    """
+    # Drop spaces / separators (".", "/", "_", ...) so "HF/WC.8", "wc 0.4",
+    # "wc.4" and "wc4" all reduce to letters + the diameter digit.
+    s = "".join(ch for ch in str(nozzle).upper() if ch.isalnum())
+    material = ""
+    for prefix in ("HFWC", "HF", "WC"):
+        if s.startswith(prefix):
+            material, s = prefix, s[len(prefix):]
+            break
+    digits = [c for c in s if c in "2468"]
+    if len(digits) != 1:
+        raise ValueError(
+            f"can't read a nozzle diameter from {nozzle!r}; expected one of "
+            f"0.2/0.4/0.6/0.8. Known nozzles: {', '.join(NOZZLE_MARKERS)}"
+        )
+    key = f"{material}0.{digits[0]}"
+    if key not in NOZZLE_MARKERS:
+        raise ValueError(
+            f"unknown nozzle {nozzle!r} (resolved to {key!r}). "
+            f"Known nozzles: {', '.join(NOZZLE_MARKERS)}"
+        )
+    return key
+
+
+def nozzle_text(nozzle: str) -> str:
+    """The human-readable text printed on that nozzle (e.g. ``WC0.6`` -> ``"WC.6"``).
+
+    Matches the text on the physical nozzle so a replica label's text agrees with
+    its marker (the camera check reportedly compares both).
+    """
+    key = normalize_nozzle(nozzle)
+    material, _, diameter = key.partition("0.")
+    if not material:
+        return f"0.{diameter}"
+    label = "HF/WC" if material == "HFWC" else material
+    return f"{label}.{diameter}"
+
+
+def nozzle_image(nozzle: str, *, quiet_zone_modules: int = 1) -> Image.Image:
+    """Render a Bambu nozzle marker to a black-on-white ``"L"`` image at 1 px/module.
+
+    The grid is drawn "positive" (white module -> black pixel, like the other
+    code generators), with a white quiet zone. The nozzle marker is physically
+    white-on-black, so the renderer inverts it for printing -- see
+    :func:`brother_ptouch.render.compose_nozzle`.
+
+    Args:
+        nozzle: A nozzle name; see :func:`normalize_nozzle` for accepted forms.
+        quiet_zone_modules: White border width in modules.
+
+    Returns:
+        A Pillow ``Image`` (mode ``"L"``), 7+2q wide x 3+2q tall modules.
+    """
+    grid = NOZZLE_MARKERS[normalize_nozzle(nozzle)]
+    rows, cols = len(grid), len(grid[0])
+    img = Image.new("L", (cols, rows), 255)
+    img.putdata([0 if ch == "#" else 255 for row in grid for ch in row])
+    if quiet_zone_modules > 0:
+        img = ImageOps.expand(img, border=quiet_zone_modules, fill=255)
     return img
