@@ -1,0 +1,32 @@
+# Example ptouch config. Copy to one of these locations (or pass --config):
+#   ./ptouch.toml
+#   ~/.config/ptouch/config.toml   ($XDG_CONFIG_HOME/ptouch/config.toml)
+#   ~/.ptouch.toml
+# or point $PTOUCH_CONFIG at any file.
+#
+# Every key is optional. Precedence: CLI flag > this file > built-in default.
+# All keys are flat (top-level) -- no sections.
+
+# Default print target: a CUPS queue name, a usb:// URI (from `ptouch list`),
+# or a Windows printer name. Used when neither --printer nor --out is passed.
+printer = "usb://Brother/PT-P710BT?serial=000M5G671606"
+
+# Tape width in mm (default 24; only 24 is fully exercised).
+tape = 24
+
+# Feed + cut after each label (true, the default) or chain mode (false).
+auto_cut = true
+
+# Leading feed before the print, in dots (default 14 ~= 2mm at 180 dpi).
+margin_dots = 14
+
+# Default font for `ptouch text` (path to a .ttf/.otf/.ttc). Omit for a
+# system sans / Pillow's bundled font.
+font = "/System/Library/Fonts/Supplemental/Arial.ttf"
+
+# Default text height in px (auto-fit shrinks to fit the tape).
+font_size = 40
+
+# Default text orientation: "horizontal" (reads along the label length) or
+# "vertical" (reads across the tape).
+orientation = "horizontal"

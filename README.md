@@ -33,9 +33,11 @@ optional extra used by the Windows transport.
 ## CLI
 
 ```
-ptouch image  --file PATH   [--printer TARGET | --out FILE] [--preview PNG] [--tape 24] [--no-cut]
+ptouch image  --file PATH   [--printer TARGET | --out FILE] [--preview PNG]
+                            [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
 ptouch text   --text STR    [--font PATH] [--font-size N] [--orientation horizontal|vertical]
-                            [--printer TARGET | --out FILE] [--preview PNG] [--tape 24] [--no-cut]
+                            [--printer TARGET | --out FILE] [--preview PNG]
+                            [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
 ptouch list                 # list reachable printers
 ```
 
@@ -44,9 +46,11 @@ ptouch list                 # list reachable printers
 | `--printer TARGET` | A CUPS queue name, a `usb://…` URI (from `ptouch list`), or a Windows printer name. |
 | `--out FILE` | Write the raw `.bin` instead of printing (mutually exclusive with `--printer`). |
 | `--preview PNG` | Also write a human-readable PNG of exactly what will print. |
-| `--no-cut` | Chain mode — no feed/cut after the label (default is auto-cut). |
-| `--tape` | Tape width in mm (default 24; only 24 is fully exercised). |
+| `--cut` / `--no-cut` | Feed + cut after the label (default), or chain mode (no feed/cut). |
+| `--tape MM` | Tape width in mm (default 24; only 24 is fully exercised). |
+| `--margin-dots N` | Leading feed before the print, in dots (default 14 ≈ 2 mm). |
 | `--orientation` | `horizontal` (reads along the label) or `vertical` (reads across the tape). |
+| `--config FILE` | TOML config supplying defaults (auto-discovered if omitted). |
 
 Examples:
 
@@ -66,6 +70,35 @@ ptouch text --text "ABS White" --out /tmp/label.bin --preview /tmp/label.png
 ```
 
 The CLI exits non-zero with the printer/stderr message on failure.
+
+## Config file
+
+Defaults for the printer, tape width, font, font size, orientation, auto-cut,
+and margin can live in a flat TOML file, so you don't repeat them on every run.
+**Precedence: CLI flag → config file → built-in default.**
+
+```toml
+# ptouch.toml
+printer     = "usb://Brother/PT-P710BT?serial=000M5G671606"
+tape        = 24
+auto_cut    = true
+margin_dots = 14
+font        = "/System/Library/Fonts/Supplemental/Arial.ttf"
+font_size   = 40
+orientation = "horizontal"
+```
+
+```bash
+ptouch text --text "PLA Black"                 # uses every default from the config
+ptouch text --text "PLA Black" --no-cut        # overrides just auto_cut
+ptouch text --text "PLA Black" --config ./my.toml
+```
+
+Pass `--config FILE`, or let it auto-discover the first of:
+`$PTOUCH_CONFIG` → `./ptouch.toml` → `~/.config/ptouch/config.toml` →
+`~/.ptouch.toml`. Every key is optional; unknown keys or bad values are
+reported with a clear error. See [`ptouch.example.toml`](ptouch.example.toml).
+The same loader is available programmatically as `load_config` / `resolve_config`.
 
 ## Library
 

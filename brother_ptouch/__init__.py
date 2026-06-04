@@ -30,6 +30,7 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
+from .config import Config, ConfigError, load_config, resolve_config
 from .encoder import (
     BYTES_PER_RASTER_LINE,
     MAX_LABEL_BYTES,
@@ -79,4 +80,9 @@ __all__ = [
     "to_preview_image",
     "DecodeResult",
     "DecodeError",
+    # config
+    "Config",
+    "ConfigError",
+    "load_config",
+    "resolve_config",
 ]

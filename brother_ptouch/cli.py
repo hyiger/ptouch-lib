@@ -1,9 +1,16 @@
 """``ptouch`` command-line interface.
 
-    ptouch image  --file PATH   [--printer TARGET | --out FILE] [--preview PNG] [--tape 24] [--no-cut]
+    ptouch image  --file PATH   [--printer TARGET | --out FILE] [--preview PNG]
+                                [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
     ptouch text   --text STR    [--font PATH] [--font-size N] [--orientation horizontal|vertical]
-                                [--printer TARGET | --out FILE] [--preview PNG] [--tape 24] [--no-cut]
+                                [--printer TARGET | --out FILE] [--preview PNG]
+                                [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
     ptouch list                 # list reachable printers
+
+Defaults for the printer, tape width, font, font size, orientation, auto-cut,
+and margin can come from a TOML config file (``--config`` or an auto-discovered
+``ptouch.toml`` / ``~/.config/ptouch/config.toml``). CLI flags always win over
+the config, which wins over the built-in defaults. See ``config.py``.
 """
 
 from __future__ import annotations
@@ -14,8 +21,23 @@ import sys
 import tempfile
 
 from . import __version__
+from .config import Config, resolve_config
 from .encoder import encode_label
 from .render import compose_image, compose_text, raster_from_composed
+
+# Built-in defaults, applied when neither a CLI flag nor the config sets a value.
+_DEFAULT_TAPE = 24.0
+_DEFAULT_AUTO_CUT = True
+_DEFAULT_MARGIN_DOTS = 14
+_DEFAULT_ORIENTATION = "horizontal"
+
+
+def _first(*values):
+    """Return the first non-None value (the precedence resolver)."""
+    for v in values:
+        if v is not None:
+            return v
+    return None
 
 
 def _add_output_args(p: argparse.ArgumentParser) -> None:
@@ -33,12 +55,20 @@ def _add_output_args(p: argparse.ArgumentParser) -> None:
         help="also write a human-readable PNG preview of the label",
     )
     p.add_argument(
-        "--tape", type=float, default=24,
-        help="tape width in mm (default 24; only 24 is fully exercised)",
+        "--tape", type=float, default=None,
+        help=f"tape width in mm (default {_DEFAULT_TAPE:g}; only 24 is fully exercised)",
     )
     p.add_argument(
-        "--no-cut", dest="auto_cut", action="store_false",
-        help="chain mode: no feed/cut after the label",
+        "--cut", dest="auto_cut", default=None, action=argparse.BooleanOptionalAction,
+        help="feed + cut after the label (default); --no-cut for chain mode",
+    )
+    p.add_argument(
+        "--margin-dots", type=int, default=None,
+        help=f"leading feed before the print, in dots (default {_DEFAULT_MARGIN_DOTS})",
+    )
+    p.add_argument(
+        "--config", metavar="FILE",
+        help="TOML config file with defaults (auto-discovered if omitted)",
     )
 
 
@@ -56,12 +86,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_text = sub.add_parser("text", help="render and print plain text as a label")
     p_text.add_argument("--text", required=True, help="the label text (newlines stack as lines)")
-    p_text.add_argument("--font", help="path to a TrueType/OpenType font (defaults to a system sans)")
+    p_text.add_argument("--font", default=None, help="path to a TrueType/OpenType font")
     p_text.add_argument("--font-size", type=int, default=None, help="font height in px (auto-fit by default)")
     p_text.add_argument(
         "--orientation",
         choices=["horizontal", "vertical"],
-        default="horizontal",
+        default=None,
         help="text reads along the label length (horizontal) or across the tape (vertical)",
     )
     _add_output_args(p_text)
@@ -70,12 +100,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _emit(args: argparse.Namespace, bitmap: bytes, raster_lines: int, composed) -> int:
+def _emit(args: argparse.Namespace, cfg: Config, bitmap: bytes, raster_lines: int, composed) -> int:
+    tape = _first(args.tape, cfg.tape, _DEFAULT_TAPE)
+    auto_cut = _first(args.auto_cut, cfg.auto_cut, _DEFAULT_AUTO_CUT)
+    margin_dots = _first(args.margin_dots, cfg.margin_dots, _DEFAULT_MARGIN_DOTS)
+
     data = encode_label(
         bitmap,
         raster_lines,
-        tape_width_mm=args.tape,
-        auto_cut=args.auto_cut,
+        tape_width_mm=tape,
+        auto_cut=auto_cut,
+        margin_dots=margin_dots,
     )
 
     if args.preview:
@@ -89,39 +124,46 @@ def _emit(args: argparse.Namespace, bitmap: bytes, raster_lines: int, composed) 
         file=sys.stderr,
     )
 
+    # --out (explicit local write) wins; else a --printer flag; else a config
+    # printer; else a scratch file in the temp dir.
     if args.out:
         with open(args.out, "wb") as fh:
             fh.write(data)
         print(f"wrote {len(data)} bytes -> {args.out}", file=sys.stderr)
-    elif args.printer:
+        return 0
+
+    target = _first(args.printer, cfg.printer)
+    if target:
         from .transport import print_raster
 
-        print_raster(args.printer, data)
-        print(f"sent {len(data)} bytes -> {args.printer}", file=sys.stderr)
-    else:
-        # Default sink mirrors the reference CLI: a .bin in the temp dir.
-        out_path = os.path.join(tempfile.gettempdir(), "label.bin")
-        with open(out_path, "wb") as fh:
-            fh.write(data)
-        print(f"no --out/--printer given; wrote {len(data)} bytes -> {out_path}", file=sys.stderr)
+        print_raster(target, data)
+        print(f"sent {len(data)} bytes -> {target}", file=sys.stderr)
+        return 0
+
+    out_path = os.path.join(tempfile.gettempdir(), "label.bin")
+    with open(out_path, "wb") as fh:
+        fh.write(data)
+    print(f"no --out/--printer/config printer; wrote {len(data)} bytes -> {out_path}", file=sys.stderr)
     return 0
 
 
 def _cmd_image(args: argparse.Namespace) -> int:
+    cfg = resolve_config(args.config)
     composed = compose_image(args.file)
     bitmap, raster_lines = raster_from_composed(composed)
-    return _emit(args, bitmap, raster_lines, composed)
+    return _emit(args, cfg, bitmap, raster_lines, composed)
 
 
 def _cmd_text(args: argparse.Namespace) -> int:
+    cfg = resolve_config(args.config)
     composed = compose_text(
         args.text,
-        font_path=args.font,
-        font_size=args.font_size,
-        orientation=args.orientation,
+        font_path=_first(args.font, cfg.font),
+        font_size=_first(args.font_size, cfg.font_size),
+        orientation=_first(args.orientation, cfg.orientation, _DEFAULT_ORIENTATION),
     )
     bitmap, raster_lines = raster_from_composed(composed)
-    return _emit(args, bitmap, raster_lines, composed)
+    return _emit(args, cfg, bitmap, raster_lines, composed)
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
