@@ -184,6 +184,27 @@ def test_square_code_too_large_to_stack_errors():
         compose_code_label(big, is_square=True, text="x", layout="stack")
 
 
+def test_stacked_barcode_with_no_room_errors():
+    # Codex review, PR #1: a non-square (barcode) code stacked under text tall
+    # enough to leave <= 0 dots must raise, not silently emit a 1-dot barcode.
+    from PIL import Image
+
+    bar = Image.new("L", (300, 110), 0)  # wide, non-square -> barcode path
+    tall_text = "\n".join(f"L{i}" for i in range(12))  # 12 lines overflow the band
+    with pytest.raises(ValueError, match="too little room"):
+        compose_code_label(bar, is_square=False, text=tall_text, layout="stack")
+
+
+def test_stacked_barcode_with_short_text_succeeds():
+    # The normal case still works and gives the barcode a real height.
+    from PIL import Image
+
+    bar = Image.new("L", (300, 110), 0)
+    img = compose_code_label(bar, is_square=False, text="Part ABC", layout="stack")
+    assert img.height == PRINT_HEAD_DOTS
+    assert img.convert("L").getextrema() == (0, 255)
+
+
 def test_qr_missing_library_message(monkeypatch):
     monkeypatch.setitem(sys.modules, "qrcode", None)  # force `import qrcode` to fail
     with pytest.raises(ImportError, match=r"brother-ptouch\[qr\]"):
