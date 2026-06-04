@@ -175,7 +175,12 @@ def _build_parser() -> argparse.ArgumentParser:
 def _emit(args: argparse.Namespace, cfg: Config, bitmap: bytes, raster_lines: int, composed) -> int:
     tape = _first(args.tape, cfg.tape, _DEFAULT_TAPE)
     auto_cut = _first(args.auto_cut, cfg.auto_cut, _DEFAULT_AUTO_CUT)
-    margin_dots = _first(args.margin_dots, cfg.margin_dots, _DEFAULT_MARGIN_DOTS)
+    # A sized label's requested length IS the printed length, so default to a
+    # 0 leading margin -- otherwise the ~2mm default feed makes the cut label
+    # longer than the advertised W. An explicit --margin-dots/config still wins.
+    # (The printer enforces its own minimum feed regardless.) (Codex review, PR #3.)
+    default_margin = 0 if args.size else _DEFAULT_MARGIN_DOTS
+    margin_dots = _first(args.margin_dots, cfg.margin_dots, default_margin)
 
     data = encode_label(
         bitmap,

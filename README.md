@@ -139,8 +139,11 @@ ptouch text --text "RACK A1" --size 40x9 --out rack.bin
 ```
 
 On 24 mm tape a sub-18 mm height prints as a centered band with blank tape
-above/below (trim to taste). The same control is available in the library via
-`LabelSize` (`compose_text(..., size=LabelSize.from_mm(40, 9))`).
+above/below (trim to taste). A sized label defaults to a **0 leading margin**
+(so the printed length matches **W**; pass `--margin-dots` to override, and note
+the printer still enforces its own minimum feed/cut). The same control is
+available in the library via `LabelSize`
+(`compose_text(..., size=LabelSize.from_mm(40, 9))`).
 
 The CLI exits non-zero with the printer/stderr message on failure.
 

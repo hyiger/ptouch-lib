@@ -128,6 +128,25 @@ def test_cli_size_sets_label_length(tmp_path):
     assert decoded.warnings == []
 
 
+def test_cli_size_defaults_to_zero_margin(tmp_path):
+    # Codex review, PR #3: a sized label shouldn't add the default leading feed.
+    out = tmp_path / "s.bin"
+    main(["text", "--text", "HI", "--size", "30x6", "--out", str(out)])
+    assert decode(out.read_bytes()).margin_dots == 0
+
+
+def test_cli_size_margin_override_wins(tmp_path):
+    out = tmp_path / "s.bin"
+    main(["text", "--text", "HI", "--size", "30x6", "--margin-dots", "10", "--out", str(out)])
+    assert decode(out.read_bytes()).margin_dots == 10
+
+
+def test_cli_unsized_keeps_default_margin(tmp_path):
+    out = tmp_path / "s.bin"
+    main(["text", "--text", "HI", "--out", str(out)])
+    assert decode(out.read_bytes()).margin_dots == 14
+
+
 def test_cli_bad_size_reports_error(tmp_path, capsys):
     rc = main(["text", "--text", "HI", "--size", "30", "--out", str(tmp_path / "x.bin")])
     assert rc == 1
