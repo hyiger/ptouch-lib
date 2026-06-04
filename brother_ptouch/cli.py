@@ -1,11 +1,15 @@
 """``ptouch`` command-line interface.
 
-    ptouch image  --file PATH   [--printer TARGET | --out FILE] [--preview PNG]
-                                [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
-    ptouch text   --text STR    [--font PATH] [--font-size N] [--orientation horizontal|vertical]
-                                [--printer TARGET | --out FILE] [--preview PNG]
-                                [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
-    ptouch list                 # list reachable printers
+    ptouch image   --file PATH    [output opts]
+    ptouch text    --text STR     [--font PATH] [--font-size N] [--orientation H|V] [output opts]
+    ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
+    ptouch barcode --data STR     [--symbology code128|ean13|...] [code opts] [output opts]
+    ptouch aruco   --id N         [--dict 4X4_50|...] [code opts] [output opts]
+    ptouch list                   # list reachable printers
+
+  code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
+  output opts:  [--printer TARGET | --out FILE] [--preview PNG] [--tape MM]
+                [--cut | --no-cut] [--margin-dots N] [--config FILE]
 
 Defaults for the printer, tape width, font, font size, orientation, auto-cut,
 and margin can come from a TOML config file (``--config`` or an auto-discovered
@@ -23,13 +27,24 @@ import tempfile
 from . import __version__
 from .config import Config, resolve_config
 from .encoder import encode_label
-from .render import compose_image, compose_text, raster_from_composed
+from .render import (
+    compose_aruco,
+    compose_barcode,
+    compose_image,
+    compose_qr,
+    compose_text,
+    raster_from_composed,
+)
 
 # Built-in defaults, applied when neither a CLI flag nor the config sets a value.
 _DEFAULT_TAPE = 24.0
 _DEFAULT_AUTO_CUT = True
 _DEFAULT_MARGIN_DOTS = 14
 _DEFAULT_ORIENTATION = "horizontal"
+_DEFAULT_LAYOUT = "side"
+_DEFAULT_QR_EC = "M"
+_DEFAULT_BARCODE_SYMBOLOGY = "code128"
+_DEFAULT_ARUCO_DICT = "4X4_50"
 
 
 def _first(*values):
@@ -72,6 +87,22 @@ def _add_output_args(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_text_opts(p: argparse.ArgumentParser) -> None:
+    """Font options for a command that renders accompanying text."""
+    p.add_argument("--font", default=None, help="path to a TrueType/OpenType font")
+    p.add_argument("--font-size", type=int, default=None, help="font height in px (auto-fit by default)")
+
+
+def _add_code_opts(p: argparse.ArgumentParser) -> None:
+    """The --text / --layout pair shared by the code subcommands."""
+    p.add_argument("--text", default=None, help="text to print beside or below the code")
+    p.add_argument(
+        "--layout", choices=["side", "stack"], default=None,
+        help="place text beside the code (side) or below it (stack)",
+    )
+    _add_text_opts(p)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ptouch",
@@ -86,8 +117,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_text = sub.add_parser("text", help="render and print plain text as a label")
     p_text.add_argument("--text", required=True, help="the label text (newlines stack as lines)")
-    p_text.add_argument("--font", default=None, help="path to a TrueType/OpenType font")
-    p_text.add_argument("--font-size", type=int, default=None, help="font height in px (auto-fit by default)")
+    _add_text_opts(p_text)
     p_text.add_argument(
         "--orientation",
         choices=["horizontal", "vertical"],
@@ -95,6 +125,28 @@ def _build_parser() -> argparse.ArgumentParser:
         help="text reads along the label length (horizontal) or across the tape (vertical)",
     )
     _add_output_args(p_text)
+
+    p_qr = sub.add_parser("qr", help="print a QR code (optionally with text)")
+    p_qr.add_argument("--data", required=True, help="the QR payload")
+    p_qr.add_argument("--ec", choices=["L", "M", "Q", "H"], default=None, help="error correction level")
+    p_qr.add_argument("--qr-version", type=int, default=None, help="QR version 1-40 (auto-fit if omitted)")
+    _add_code_opts(p_qr)
+    _add_output_args(p_qr)
+
+    p_bc = sub.add_parser("barcode", help="print a 1D barcode (optionally with text)")
+    p_bc.add_argument("--data", required=True, help="the barcode payload")
+    p_bc.add_argument(
+        "--symbology", default=None,
+        help="barcode type, e.g. code128, code39, ean13, ean8, upca (default code128)",
+    )
+    _add_code_opts(p_bc)
+    _add_output_args(p_bc)
+
+    p_ar = sub.add_parser("aruco", help="print an ArUco marker (optionally with text)")
+    p_ar.add_argument("--id", type=int, required=True, dest="marker_id", help="marker id")
+    p_ar.add_argument("--dict", default=None, dest="dictionary", help="ArUco dictionary (default 4X4_50)")
+    _add_code_opts(p_ar)
+    _add_output_args(p_ar)
 
     sub.add_parser("list", help="list reachable printers")
     return parser
@@ -166,6 +218,49 @@ def _cmd_text(args: argparse.Namespace) -> int:
     return _emit(args, cfg, bitmap, raster_lines, composed)
 
 
+def _cmd_qr(args: argparse.Namespace) -> int:
+    cfg = resolve_config(args.config)
+    composed = compose_qr(
+        args.data,
+        error_correction=_first(args.ec, cfg.qr_ec, _DEFAULT_QR_EC),
+        version=args.qr_version,
+        text=args.text,
+        layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
+        font_path=_first(args.font, cfg.font),
+        font_size=_first(args.font_size, cfg.font_size),
+    )
+    bitmap, raster_lines = raster_from_composed(composed)
+    return _emit(args, cfg, bitmap, raster_lines, composed)
+
+
+def _cmd_barcode(args: argparse.Namespace) -> int:
+    cfg = resolve_config(args.config)
+    composed = compose_barcode(
+        args.data,
+        symbology=_first(args.symbology, cfg.barcode_symbology, _DEFAULT_BARCODE_SYMBOLOGY),
+        text=args.text,
+        layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
+        font_path=_first(args.font, cfg.font),
+        font_size=_first(args.font_size, cfg.font_size),
+    )
+    bitmap, raster_lines = raster_from_composed(composed)
+    return _emit(args, cfg, bitmap, raster_lines, composed)
+
+
+def _cmd_aruco(args: argparse.Namespace) -> int:
+    cfg = resolve_config(args.config)
+    composed = compose_aruco(
+        args.marker_id,
+        dictionary=_first(args.dictionary, cfg.aruco_dict, _DEFAULT_ARUCO_DICT),
+        text=args.text,
+        layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
+        font_path=_first(args.font, cfg.font),
+        font_size=_first(args.font_size, cfg.font_size),
+    )
+    bitmap, raster_lines = raster_from_composed(composed)
+    return _emit(args, cfg, bitmap, raster_lines, composed)
+
+
 def _cmd_list(args: argparse.Namespace) -> int:
     from .transport import list_printers
 
@@ -183,7 +278,14 @@ def main(argv: list[str] | None = None) -> int:
     """Console entry point. Returns a process exit code."""
     parser = _build_parser()
     args = parser.parse_args(argv)
-    handlers = {"image": _cmd_image, "text": _cmd_text, "list": _cmd_list}
+    handlers = {
+        "image": _cmd_image,
+        "text": _cmd_text,
+        "qr": _cmd_qr,
+        "barcode": _cmd_barcode,
+        "aruco": _cmd_aruco,
+        "list": _cmd_list,
+    }
     try:
         return handlers[args.command](args)
     except Exception as err:

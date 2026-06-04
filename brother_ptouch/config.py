@@ -37,7 +37,10 @@ __all__ = ["Config", "ConfigError", "load_config", "resolve_config", "find_confi
 
 #: The recognized top-level keys. Anything else is a typo -> hard error.
 _KNOWN_KEYS = frozenset(
-    {"printer", "tape", "auto_cut", "margin_dots", "font", "font_size", "orientation"}
+    {
+        "printer", "tape", "auto_cut", "margin_dots", "font", "font_size", "orientation",
+        "layout", "qr_ec", "barcode_symbology", "aruco_dict",
+    }
 )
 
 
@@ -56,6 +59,14 @@ class Config:
     font: str | None = None
     font_size: int | None = None
     orientation: str | None = None
+    #: Default layout for the qr/barcode/aruco commands ("side" or "stack").
+    layout: str | None = None
+    #: Default QR error correction ("L"/"M"/"Q"/"H").
+    qr_ec: str | None = None
+    #: Default barcode symbology (e.g. "code128").
+    barcode_symbology: str | None = None
+    #: Default ArUco dictionary (e.g. "4X4_50").
+    aruco_dict: str | None = None
     #: Path the config was loaded from (for diagnostics); None if defaults.
     source: str | None = None
 
@@ -139,6 +150,20 @@ def load_config(path: str) -> Config:
         if v not in ("horizontal", "vertical"):
             raise ConfigError(f"{path}: 'orientation' must be 'horizontal' or 'vertical'")
         cfg.orientation = v
+    if "layout" in data:
+        v = data["layout"]
+        if v not in ("side", "stack"):
+            raise ConfigError(f"{path}: 'layout' must be 'side' or 'stack'")
+        cfg.layout = v
+    if "qr_ec" in data:
+        v = _as_str(data, "qr_ec", path).upper()
+        if v not in ("L", "M", "Q", "H"):
+            raise ConfigError(f"{path}: 'qr_ec' must be one of L, M, Q, H")
+        cfg.qr_ec = v
+    if "barcode_symbology" in data:
+        cfg.barcode_symbology = _as_str(data, "barcode_symbology", path)
+    if "aruco_dict" in data:
+        cfg.aruco_dict = _as_str(data, "aruco_dict", path)
 
     return cfg
 

@@ -79,11 +79,26 @@ def test_invalid_toml_errors(tmp_path):
         ("font_size = 0\n", "'font_size' must be positive"),
         ('orientation = "sideways"\n', "orientation"),
         ("printer = 5\n", "'printer' must be a string"),
+        ('layout = "diagonal"\n', "'layout' must be"),
+        ('qr_ec = "Z"\n', "'qr_ec' must be"),
     ],
 )
 def test_value_validation(tmp_path, body, msg):
     with pytest.raises(ConfigError, match=msg):
         load_config(_write(tmp_path, body))
+
+
+def test_load_code_defaults(tmp_path):
+    cfg = load_config(
+        _write(
+            tmp_path,
+            'layout = "stack"\nqr_ec = "h"\nbarcode_symbology = "ean13"\naruco_dict = "5X5_100"\n',
+        )
+    )
+    assert cfg.layout == "stack"
+    assert cfg.qr_ec == "H"  # normalized to upper
+    assert cfg.barcode_symbology == "ean13"
+    assert cfg.aruco_dict == "5X5_100"
 
 
 # --------------------------------------------------------------------------- #

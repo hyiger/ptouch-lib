@@ -33,6 +33,15 @@ dependencies = [
 
 [project.optional-dependencies]
 windows = ["pywin32; sys_platform == 'win32'"]
+qr = ["qrcode>=7.4"]
+barcode = ["python-barcode>=0.15"]
+aruco = ["opencv-contrib-python-headless>=4.7", "numpy>=1.21"]
+codes = [
+    "qrcode>=7.4",
+    "python-barcode>=0.15",
+    "opencv-contrib-python-headless>=4.7",
+    "numpy>=1.21",
+]
 dev = ["pytest>=7", "ruff"]
 
 [project.scripts]

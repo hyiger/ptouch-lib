@@ -6,6 +6,9 @@ on a **Brother PT-P710BT** (P-touch CUBE) on **24 mm TZe tape**.
 - Convert a **PNG/JPG** image to the printer's 1-bit raster format and print it.
 - Render **plain text** to a label, with selectable **font**, **font size**, and
   **orientation** (horizontal / vertical).
+- Generate **QR codes** (all versions that fit on 24 mm tape), **1D barcodes**
+  (Code 128, EAN, UPC, …), and **ArUco markers** — optionally with a text string
+  printed **beside** or **below** the code.
 - Print over **USB** through the host OS print system (CUPS on macOS/Linux, the
   spooler on Windows) — the PT-P710BT is a USB printer-class device on the
   desktop, *not* a serial/Bluetooth device.
@@ -22,23 +25,39 @@ fix**) were learned on real hardware. See [`brother_ptouch/encoder.py`](brother_
 ## Install
 
 ```bash
-pip install brother-ptouch          # from PyPI (once published)
-pip install -e ".[dev]"             # from a clone, with test + lint extras
+pip install brother-ptouch              # from PyPI (once published)
+pip install -e ".[dev]"                 # from a clone, with test + lint extras
 pip install "brother-ptouch[windows]"   # adds pywin32 for the Windows RAW path
+pip install "brother-ptouch[codes]"     # adds QR + barcode + ArUco support
 ```
 
-Only dependency is [Pillow](https://python-pillow.org/). `pywin32` is an
-optional extra used by the Windows transport.
+The core only needs [Pillow](https://python-pillow.org/). The code generators
+are optional extras so you install only what you use:
+
+| Extra | Pulls in | Enables |
+|---|---|---|
+| `[qr]` | `qrcode` | `ptouch qr` |
+| `[barcode]` | `python-barcode` | `ptouch barcode` |
+| `[aruco]` | `opencv-contrib-python-headless` | `ptouch aruco` |
+| `[codes]` | all three | every code command |
+| `[windows]` | `pywin32` | Windows RAW printing |
+
+A code command raises a clear "install `brother-ptouch[…]`" error if its library
+is missing.
 
 ## CLI
 
 ```
-ptouch image  --file PATH   [--printer TARGET | --out FILE] [--preview PNG]
-                            [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
-ptouch text   --text STR    [--font PATH] [--font-size N] [--orientation horizontal|vertical]
-                            [--printer TARGET | --out FILE] [--preview PNG]
-                            [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
-ptouch list                 # list reachable printers
+ptouch image   --file PATH    [output opts]
+ptouch text    --text STR     [--font PATH] [--font-size N] [--orientation horizontal|vertical] [output opts]
+ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
+ptouch barcode --data STR     [--symbology code128|ean13|...]  [code opts] [output opts]
+ptouch aruco   --id N         [--dict 4X4_50|5X5_100|...]      [code opts] [output opts]
+ptouch list                   # list reachable printers
+
+# code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
+# output opts:  [--printer TARGET | --out FILE] [--preview PNG]
+#               [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
 ```
 
 | Flag | Meaning |
@@ -69,6 +88,38 @@ ptouch text --text "PLA Black" --font-size 40 --orientation vertical \
 ptouch text --text "ABS White" --out /tmp/label.bin --preview /tmp/label.png
 ```
 
+### Codes (QR, barcode, ArUco)
+
+Each code command optionally takes a `--text` string printed alongside the code
+— `--layout side` (default) places it beside the code; `--layout stack` puts it
+below, sharing the tape width.
+
+```bash
+# QR with a name beside it (auto-fits the smallest version for the payload)
+ptouch qr --data "https://example.com/i/42" --text "Bin 42" --out /tmp/qr.bin
+
+# A short QR stacked above its label
+ptouch qr --data "PLA-0042" --text "PLA Black" --layout stack --printer "$P"
+
+# Code 128 barcode with the part number below it
+ptouch barcode --data "ABC-12345" --symbology code128 --text "Part ABC" --layout stack --out /tmp/bc.bin
+
+# An ArUco marker (OpenCV dictionaries) with its id
+ptouch aruco --id 7 --dict 4X4_50 --text "Marker 7" --out /tmp/ar.bin
+```
+
+Notes:
+- **QR** auto-picks the smallest version for the data; any version that
+  physically fits 24 mm tape is supported. Long payloads need `--layout side`
+  (the QR gets the full tape height); short ones stack fine. A 4-module quiet
+  zone is always included.
+- **Barcode** `--symbology` is any [python-barcode](https://github.com/WhyNotHugo/python-barcode)
+  type (`code128`, `code39`, `ean13`, `ean8`, `upca`, `isbn13`, …); the data
+  must be valid for it.
+- **ArUco** `--dict` is any OpenCV predefined dictionary, with or without the
+  `DICT_` prefix (`4X4_50`, `5X5_100`, `6X6_250`, `7X7_1000`, `APRILTAG_36h11`, …);
+  a white quiet zone is baked in so detectors can find it.
+
 The CLI exits non-zero with the printer/stderr message on failure.
 
 ## Config file
@@ -79,13 +130,17 @@ and margin can live in a flat TOML file, so you don't repeat them on every run.
 
 ```toml
 # ptouch.toml
-printer     = "usb://Brother/PT-P710BT?serial=000M5G671606"
-tape        = 24
-auto_cut    = true
-margin_dots = 14
-font        = "/System/Library/Fonts/Supplemental/Arial.ttf"
-font_size   = 40
-orientation = "horizontal"
+printer           = "usb://Brother/PT-P710BT?serial=000M5G671606"
+tape              = 24
+auto_cut          = true
+margin_dots       = 14
+font              = "/System/Library/Fonts/Supplemental/Arial.ttf"
+font_size         = 40
+orientation       = "horizontal"
+layout            = "side"      # code + text layout for qr/barcode/aruco
+qr_ec             = "M"
+barcode_symbology = "code128"
+aruco_dict        = "4X4_50"
 ```
 
 ```bash

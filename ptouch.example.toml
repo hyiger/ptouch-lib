@@ -30,3 +30,18 @@ font_size = 40
 # Default text orientation: "horizontal" (reads along the label length) or
 # "vertical" (reads across the tape).
 orientation = "horizontal"
+
+# --- defaults for the qr / barcode / aruco commands ---
+
+# Where the accompanying --text goes: "side" (beside the code) or "stack"
+# (below it). The `font` / `font_size` keys above apply to that text too.
+layout = "side"
+
+# Default QR error correction: L, M, Q, or H.
+qr_ec = "M"
+
+# Default barcode symbology (any python-barcode type).
+barcode_symbology = "code128"
+
+# Default ArUco dictionary (any OpenCV predefined dict, DICT_ prefix optional).
+aruco_dict = "4X4_50"

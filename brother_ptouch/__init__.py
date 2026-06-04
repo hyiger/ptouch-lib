@@ -30,6 +30,7 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
+from .codes import aruco_image, barcode_image, qr_image
 from .config import Config, ConfigError, load_config, resolve_config
 from .encoder import (
     BYTES_PER_RASTER_LINE,
@@ -41,9 +42,16 @@ from .encoder import (
     pack_grayscale_row,
 )
 from .render import (
+    aruco_to_raster,
+    barcode_to_raster,
+    compose_aruco,
+    compose_barcode,
+    compose_code_label,
     compose_image,
+    compose_qr,
     compose_text,
     image_to_raster,
+    qr_to_raster,
     raster_from_composed,
     render_image,
     render_text,
@@ -70,6 +78,17 @@ __all__ = [
     "compose_image",
     "compose_text",
     "raster_from_composed",
+    # codes
+    "qr_image",
+    "barcode_image",
+    "aruco_image",
+    "compose_qr",
+    "compose_barcode",
+    "compose_aruco",
+    "compose_code_label",
+    "qr_to_raster",
+    "barcode_to_raster",
+    "aruco_to_raster",
     # transport
     "list_printers",
     "print_raster",
