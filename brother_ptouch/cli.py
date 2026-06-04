@@ -185,6 +185,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--quiet-zone", type=int, default=1, dest="quiet_zone",
         help="black border around the marker, in modules (default 1)",
     )
+    p_nz.add_argument(
+        "--separator", default=True, action=argparse.BooleanOptionalAction,
+        help="draw the | divider between the marker and the text, as on the "
+             "nozzle (default); --no-separator to omit it",
+    )
     _add_code_opts(p_nz)
     _add_output_args(p_nz)
 
@@ -320,6 +325,7 @@ def _cmd_nozzle(args: argparse.Namespace) -> int:
         text=text,
         invert=args.invert,
         quiet_zone_modules=args.quiet_zone,
+        separator=args.separator,
         layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
         font_path=_first(args.font, cfg.font),
         font_size=_first(args.font_size, cfg.font_size),
