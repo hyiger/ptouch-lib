@@ -192,12 +192,13 @@ def test_cli_nozzle_to_out_decodes_clean(tmp_path):
 
 def test_cli_nozzle_sized_label(tmp_path):
     out = tmp_path / "s.bin"
-    # A small physical size fits: the nozzle path drops the ~2mm end padding.
-    rc = main(["nozzle", "WC0.4", "--no-text", "--size", "8x4", "--out", str(out)])
+    # Actual nozzle size: 2.2mm-tall marker (the --size height is the marker
+    # grid height) on a 16mm-long band. The nozzle path drops the ~2mm padding.
+    rc = main(["nozzle", "WC0.4", "--no-text", "--size", "16x2.2", "--out", str(out)])
     assert rc == 0
     decoded = decode(out.read_bytes())
-    # 8 mm at 180 dpi ~= 57 raster lines (the exact requested length).
-    assert abs(decoded.raster_line_count - round(8 * 180 / 25.4)) <= 1
+    # 16 mm at 180 dpi ~= 113 raster lines (the exact requested length).
+    assert abs(decoded.raster_line_count - round(16 * 180 / 25.4)) <= 1
 
 
 def test_cli_unknown_nozzle_returns_error(tmp_path):

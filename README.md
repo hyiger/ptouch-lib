@@ -53,7 +53,7 @@ ptouch text    --text STR     [--font PATH] [--font-size N] [--orientation horiz
 ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
 ptouch barcode --data STR     [--symbology code128|ean13|...]  [code opts] [output opts]
 ptouch aruco   --id N         [--dict 4X4_50|5X5_100|...]      [code opts] [output opts]
-ptouch nozzle  NAME           [--no-text] [--no-invert] [--quiet-zone N] [code opts] [output opts]
+ptouch nozzle  NAME           [--no-text] [--no-invert] [--no-separator] [code opts] [output opts]
 ptouch list                   # list reachable printers
 
 # code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
@@ -133,24 +133,36 @@ built-in table, so the command needs no extra dependencies (Pillow only).
 `HFWC0.8`. Materials: stainless (none), `HF` (high flow), `WC` (tungsten
 carbide), `HFWC`; diameters `0.2`/`0.4`/`0.6`/`0.8` (only `0.2` for stainless).
 
+The band is laid out like the real nozzle: `[marker] │ [text]`, with a `│`
+divider (`--no-separator` to omit) and ~1-module spacing. The text matching the
+nozzle is added by default (the camera reportedly checks marker *and* text);
+`--no-text` prints the marker alone.
+
 The marker is physically white-on-black, so by default the whole label is
-**inverted** — a white marker (and white text) on a solid black field — to match
-the nozzle on ordinary black-on-white tape. Use `--no-invert` for white-on-black
-tape. The text matching the nozzle is added by default (the camera reportedly
-checks marker *and* text); `--no-text` prints the marker alone.
+**inverted** — white marker + text on a solid black field — to match the nozzle
+on ordinary black-on-white tape. For **white-on-black tape** (black tape, white
+print) pass `--no-invert`: only the marker/text print (in white) and the tape is
+the black background — far less ink and a closer match.
+
+**Physical size.** The real marker is ~0.74 mm per module → a 7×3 grid of
+~5.2×2.2 mm, sitting in a 16×5 mm heat-sink face. With `--size WxH`, **H is the
+marker grid height** — so `--size 16x2.2` prints the marker at its true size on a
+16 mm band. At 180 dpi a module is ~5 dots (~0.71 mm), the closest the head does.
 
 ```bash
-# A WC 0.4 nozzle marker + "WC.4" text, inverted for black-on-white tape
-ptouch nozzle WC0.4 --out /tmp/nz.bin --preview /tmp/nz.png
+# WC 0.4 marker + "WC.4", actual nozzle size, black-on-white tape
+ptouch nozzle WC0.4 --size 16x2.2 --out nz.bin --preview nz.png
 
-# Marker only, at an exact small physical size to cover a nozzle's own marker
-ptouch nozzle WC0.4 --no-text --size 8x4 --out /tmp/nz.bin
+# Same, for black (white-on-black) tape
+ptouch nozzle WC0.4 --size 16x2.2 --no-invert --printer "$P"
 ```
 
-The marker is only a few millimetres on the nozzle, so pair it with `--size`
-(see below) for an exact physical size; the auto fill scales it to the full tape
-width. The WC / HF-WC bit patterns came from lower-resolution source photos and
-may be refined.
+> **Status / caveats.** All 13 markers are verified (the WC markers match
+> third-party Diamondback nozzles bit-for-bit). The marker is the camera's
+> primary, pattern-recognition check and is reproduced exactly; the human-readable
+> text is rendered in a system font (close, not Bambu's exact typeface). Whether
+> the H2D *accepts* a printed replica is **not yet confirmed on hardware** —
+> consider it experimental.
 
 ### Exact size
 

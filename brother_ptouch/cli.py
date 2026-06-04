@@ -182,8 +182,9 @@ def _build_parser() -> argparse.ArgumentParser:
              "(default); --no-invert for white-on-black tape",
     )
     p_nz.add_argument(
-        "--quiet-zone", type=int, default=1, dest="quiet_zone",
-        help="black border around the marker, in modules (default 1)",
+        "--quiet-zone", type=int, default=0, dest="quiet_zone",
+        help="black border around the marker, in modules (default 0; the "
+             "inverted field / black tape already surrounds it)",
     )
     p_nz.add_argument(
         "--separator", default=True, action=argparse.BooleanOptionalAction,

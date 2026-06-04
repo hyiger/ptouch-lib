@@ -464,6 +464,8 @@ def compose_code_label(
     pad: int | None = None,
     min_code_dots: int | None = None,
     separator: bool = False,
+    gap: int | None = None,
+    sep_w: int | None = None,
 ) -> Image.Image:
     """Compose a code (QR/barcode/ArUco) -- optionally with a text string --
     into a ``length x 128`` ``"L"`` image in human-reading orientation.
@@ -487,6 +489,10 @@ def compose_code_label(
         separator: For the ``"side"`` layout with text, draw a vertical bar
             between the code and the text (matches the ``|`` divider on Bambu
             nozzle bands). Ignored without text or for ``"stack"``.
+        gap: Spacing (dots) between code, separator, and text in the ``"side"``
+            layout; ``None`` uses :data:`GAP_DOTS` (~1.7mm). Nozzle markers pass
+            ~1 module to match the tight real spacing.
+        sep_w: Divider bar width (dots); ``None`` auto-sizes from the band.
 
     Returns:
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
@@ -495,6 +501,7 @@ def compose_code_label(
         raise ValueError(f"layout must be 'side' or 'stack', got {layout!r}")
     pad = HORIZONTAL_PADDING_DOTS if pad is None else pad
     mcd = MIN_CODE_DOTS if min_code_dots is None else min_code_dots
+    g = GAP_DOTS if gap is None else gap
     text = text if (text and text.strip()) else None
     band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
 
@@ -504,20 +511,20 @@ def compose_code_label(
         block = _text_block(text, font_path, font_size, band, DEFAULT_FONT_SIZE) if text else None
         if block:
             _require_band_fit(block.height, band, size)
-        # Optional vertical divider bar (the nozzle band's "|"), centered in an
-        # extra gap between the code and the text, sized to the content band.
-        sep_w = max(2, round(band * 0.05)) if (separator and block) else 0
-        sep_gap = GAP_DOTS if sep_w else 0
-        text_w = (GAP_DOTS + sep_w + sep_gap + block.width) if block else 0
+        # Optional vertical divider bar (the nozzle band's "|"), centered in the
+        # gap between the code and the text, as tall as the code.
+        sw = (sep_w if sep_w is not None else max(2, round(band * 0.05))) if (separator and block) else 0
+        sep_gap = g if sw else 0
+        text_w = (g + sw + sep_gap + block.width) if block else 0
         width = 2 * pad + cw + text_w
         canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
         canvas.paste(fitted, (pad, (PRINT_HEAD_DOTS - ch) // 2))
         if block:
-            x = pad + cw + GAP_DOTS
-            if sep_w:
-                bar = Image.new("L", (sep_w, band), 0)
-                canvas.paste(bar, (x, (PRINT_HEAD_DOTS - band) // 2))
-                x += sep_w + sep_gap
+            x = pad + cw + g
+            if sw:
+                bar = Image.new("L", (sw, ch), 0)
+                canvas.paste(bar, (x, (PRINT_HEAD_DOTS - ch) // 2))
+                x += sw + sep_gap
             canvas.paste(block, (x, (PRINT_HEAD_DOTS - block.height) // 2))
         return _apply_length(canvas, size)
 
@@ -602,7 +609,7 @@ def compose_nozzle(
     *,
     text: str | None = None,
     invert: bool = True,
-    quiet_zone_modules: int = 1,
+    quiet_zone_modules: int = 0,
     layout: str = "side",
     separator: bool = True,
     font_path: str | None = None,
@@ -625,7 +632,8 @@ def compose_nozzle(
         nozzle: A nozzle name; see :func:`brother_ptouch.codes.normalize_nozzle`.
         text: Optional text printed alongside the marker (e.g. ``"WC.4"``).
         invert: Invert the composed label to white-on-black (default ``True``).
-        quiet_zone_modules: Black border around the marker, in marker modules.
+        quiet_zone_modules: Black border around the marker, in marker modules
+            (default 0 -- the inverted black field / black tape is the surround).
         layout: ``"side"`` (text beside the marker) or ``"stack"`` (text below).
         separator: Draw the ``|`` divider between marker and text (the real
             nozzle band has one); only applies to the ``"side"`` layout with text.
@@ -636,6 +644,10 @@ def compose_nozzle(
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
     """
     img = codes.nozzle_image(nozzle, quiet_zone_modules=quiet_zone_modules)
+    # Module size (dots) the marker will scale to, so gaps/divider track the real
+    # band: ~1 module between marker, "|", and text; divider ~0.4 module wide.
+    band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
+    module = max(1, band // img.height)
     composed = compose_code_label(
         img, is_square=True, text=text, layout=layout, separator=separator,
         font_path=font_path, font_size=font_size, size=size,
@@ -647,6 +659,9 @@ def compose_nozzle(
         # ~16 dots tall), well under the QR/barcode MIN_CODE_DOTS floor; the
         # marker height itself is the only real lower bound.
         min_code_dots=img.height,
+        # Tight, real-band spacing instead of the default ~2mm code gap.
+        gap=module,
+        sep_w=max(1, round(0.4 * module)),
     )
     if invert:
         composed = ImageOps.invert(composed if composed.mode == "L" else composed.convert("L"))
