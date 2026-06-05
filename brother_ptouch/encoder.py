@@ -110,10 +110,15 @@ def encode_label(
         The raw Brother raster command byte stream as ``bytes``.
 
     Raises:
-        ValueError: on bad ``raster_lines``, a bitmap-length mismatch, a
-            ``margin_dots`` out of u16 range, or an output exceeding
-            :data:`MAX_LABEL_BYTES`.
+        ValueError: on an unsupported ``tape_width_mm``, bad ``raster_lines``, a
+            bitmap-length mismatch, a ``margin_dots`` out of u16 range, or an
+            output exceeding :data:`MAX_LABEL_BYTES`.
     """
+    if tape_width_mm not in VALID_TAPE_WIDTHS_MM:
+        raise ValueError(
+            f"tape_width_mm {tape_width_mm} is not a supported TZe width; "
+            f"expected one of {VALID_TAPE_WIDTHS_MM}"
+        )
     if raster_lines < 1:
         raise ValueError("raster_lines must be >= 1")
     if len(bitmap) != raster_lines * BYTES_PER_RASTER_LINE:

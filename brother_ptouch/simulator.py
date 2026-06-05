@@ -64,25 +64,37 @@ class _StreamReader:
     def remaining(self) -> int:
         return len(self.buf) - self.pos
 
+    def _need(self, n: int) -> None:
+        """Raise DecodeError (not IndexError) if fewer than ``n`` bytes remain."""
+        if self.remaining() < n:
+            raise DecodeError(
+                f"unexpected end of stream at offset {self.pos}: "
+                f"need {n} more byte(s), have {self.remaining()}"
+            )
+
     def peek(self, n: int) -> bytes:
         return self.buf[self.pos : self.pos + n]
 
     def read(self, n: int) -> bytes:
+        self._need(n)
         out = self.buf[self.pos : self.pos + n]
         self.pos += n
         return out
 
     def u8(self) -> int:
+        self._need(1)
         v = self.buf[self.pos]
         self.pos += 1
         return v
 
     def u16le(self) -> int:
+        self._need(2)
         v = int.from_bytes(self.buf[self.pos : self.pos + 2], "little")
         self.pos += 2
         return v
 
     def u32le(self) -> int:
+        self._need(4)
         v = int.from_bytes(self.buf[self.pos : self.pos + 4], "little")
         self.pos += 4
         return v
