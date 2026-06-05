@@ -10,7 +10,7 @@ on a **Brother PT-P710BT** (P-touch CUBE) on **24 mm TZe tape**.
   (Code 128, EAN, UPC, …), and **ArUco markers** — optionally with a text string
   printed **beside** or **below** the code.
 - Reproduce **Bambu nozzle marker bands** to relabel nozzles for the **H2D/H2C**
-  (e.g. make a third-party Diamondback nozzle read as `WC.4` — hardware-confirmed).
+  (e.g. make a third-party Diamondback nozzle read as `WC.4` — confirmed on an H2D).
 - Print over **USB** through the host OS print system (CUPS on macOS/Linux, the
   spooler on Windows) — the PT-P710BT is a USB printer-class device on the
   desktop, *not* a serial/Bluetooth device.
