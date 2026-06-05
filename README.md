@@ -85,6 +85,12 @@ ptouch list
 ptouch image --file logo.png --printer "usb://Brother/PT-P710BT?serial=000M5G671606"
 ```
 
+> Examples below use `$P` as shorthand for **your** printer target. Copy the
+> `usb://…` URI from `ptouch list` and set it once in your shell:
+> `export P="usb://Brother/PT-P710BT?serial=000M5G671606"`. (`$P` is a normal
+> shell variable, not a `ptouch` feature — you can also pass the URI or a CUPS
+> queue name directly, or set `printer` in a config file and drop `--printer`.)
+
 Vertical text at a fixed font size:
 
 ```bash
