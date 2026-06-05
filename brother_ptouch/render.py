@@ -40,12 +40,14 @@ __all__ = [
     "compose_qr",
     "compose_barcode",
     "compose_aruco",
+    "compose_nozzle",
     "raster_from_composed",
     "image_to_raster",
     "text_to_raster",
     "qr_to_raster",
     "barcode_to_raster",
     "aruco_to_raster",
+    "nozzle_to_raster",
     "render_image",
     "render_text",
 ]
@@ -414,20 +416,22 @@ def _text_block(text, font_path, font_size, max_h, default_size):
     return _render_text_block(font, lines)
 
 
-def _fit_code(code: Image.Image, is_square: bool, max_h: int) -> Image.Image:
+def _fit_code(code: Image.Image, is_square: bool, max_h: int, min_dots: int = MIN_CODE_DOTS) -> Image.Image:
     """Scale a code image to fit ``max_h`` dots tall.
 
     Square codes (QR/ArUco) scale by the largest *integer* factor so modules
     stay crisp; barcodes (whose height carries no data) are scaled to exactly
     ``max_h`` with their bar widths -- the data -- preserved.
 
-    Raises ``ValueError`` when ``max_h`` is below :data:`MIN_CODE_DOTS` -- e.g.
-    when stacked text crowds the code out -- rather than emitting an
-    unscannably tiny code. Previously the barcode path clamped to ``max(1,
-    max_h)`` and silently produced a 1-dot-high barcode (Codex review, PR #1).
+    Raises ``ValueError`` when ``max_h`` is below ``min_dots`` (default
+    :data:`MIN_CODE_DOTS`) -- e.g. when stacked text crowds the code out --
+    rather than emitting an unscannably tiny code. Previously the barcode path
+    clamped to ``max(1, max_h)`` and silently produced a 1-dot-high barcode
+    (Codex review, PR #1). Nozzle markers pass a smaller ``min_dots`` because
+    they are reproduced at the nozzle's real (sub-3mm) physical size.
     """
     w, h = code.size
-    if max_h < MIN_CODE_DOTS:
+    if max_h < min_dots:
         raise ValueError(
             f"only {max_h} dots remain for the code -- the accompanying text leaves "
             "too little room. Use fewer / shorter text lines, a smaller font size, "
@@ -457,6 +461,11 @@ def compose_code_label(
     font_path: str | None = None,
     font_size: int | None = None,
     size: LabelSize | None = None,
+    pad: int | None = None,
+    min_code_dots: int | None = None,
+    separator: bool = False,
+    gap: int | None = None,
+    sep_w: int | None = None,
 ) -> Image.Image:
     """Compose a code (QR/barcode/ArUco) -- optionally with a text string --
     into a ``length x 128`` ``"L"`` image in human-reading orientation.
@@ -471,45 +480,70 @@ def compose_code_label(
         font_path, font_size: Font for the accompanying text.
         size: An explicit :class:`LabelSize` to fit into instead of the full
             tape band; ``None`` keeps the auto behaviour.
+        pad: End padding (dots) at each end of the length; ``None`` uses the
+            default ~2mm. Pass ``0`` for codes that supply their own quiet zone
+            and set an exact length via ``size`` (e.g. nozzle markers).
+        min_code_dots: Minimum code height (dots) before raising; ``None`` uses
+            :data:`MIN_CODE_DOTS`. Nozzle markers pass a small value to allow
+            reproduction at the nozzle's real (sub-3mm) size.
+        separator: For the ``"side"`` layout with text, draw a vertical bar
+            between the code and the text (matches the ``|`` divider on Bambu
+            nozzle bands). Ignored without text or for ``"stack"``.
+        gap: Spacing (dots) between code, separator, and text in the ``"side"``
+            layout; ``None`` uses :data:`GAP_DOTS` (~1.7mm). Nozzle markers pass
+            ~1 module to match the tight real spacing.
+        sep_w: Divider bar width (dots); ``None`` auto-sizes from the band.
 
     Returns:
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
     """
     if layout not in ("side", "stack"):
         raise ValueError(f"layout must be 'side' or 'stack', got {layout!r}")
+    pad = HORIZONTAL_PADDING_DOTS if pad is None else pad
+    mcd = MIN_CODE_DOTS if min_code_dots is None else min_code_dots
+    g = GAP_DOTS if gap is None else gap
     text = text if (text and text.strip()) else None
     band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
 
     if layout == "side":
-        fitted = _fit_code(code, is_square, band)
+        fitted = _fit_code(code, is_square, band, mcd)
         cw, ch = fitted.size
         block = _text_block(text, font_path, font_size, band, DEFAULT_FONT_SIZE) if text else None
         if block:
             _require_band_fit(block.height, band, size)
-        width = 2 * HORIZONTAL_PADDING_DOTS + cw + (GAP_DOTS + block.width if block else 0)
+        # Optional vertical divider bar (the nozzle band's "|"), centered in the
+        # gap between the code and the text, as tall as the code.
+        sw = (sep_w if sep_w is not None else max(2, round(band * 0.05))) if (separator and block) else 0
+        sep_gap = g if sw else 0
+        text_w = (g + sw + sep_gap + block.width) if block else 0
+        width = 2 * pad + cw + text_w
         canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
-        canvas.paste(fitted, (HORIZONTAL_PADDING_DOTS, (PRINT_HEAD_DOTS - ch) // 2))
+        canvas.paste(fitted, (pad, (PRINT_HEAD_DOTS - ch) // 2))
         if block:
-            x = HORIZONTAL_PADDING_DOTS + cw + GAP_DOTS
+            x = pad + cw + g
+            if sw:
+                bar = Image.new("L", (sw, ch), 0)
+                canvas.paste(bar, (x, (PRINT_HEAD_DOTS - ch) // 2))
+                x += sw + sep_gap
             canvas.paste(block, (x, (PRINT_HEAD_DOTS - block.height) // 2))
         return _apply_length(canvas, size)
 
     # stack: code on top, text below, sharing the band.
     if text:
         block = _text_block(text, font_path, font_size, round(band * STACK_TEXT_FRACTION), STACK_FONT_SIZE)
-        fitted = _fit_code(code, is_square, band - block.height - GAP_DOTS)
+        fitted = _fit_code(code, is_square, band - block.height - GAP_DOTS, mcd)
         cw, ch = fitted.size
         content_h = ch + GAP_DOTS + block.height
-        width = max(cw, block.width) + 2 * HORIZONTAL_PADDING_DOTS
+        width = max(cw, block.width) + 2 * pad
         canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
         top = (PRINT_HEAD_DOTS - content_h) // 2
         canvas.paste(fitted, ((width - cw) // 2, top))
         canvas.paste(block, ((width - block.width) // 2, top + ch + GAP_DOTS))
         return _apply_length(canvas, size)
 
-    fitted = _fit_code(code, is_square, band)
+    fitted = _fit_code(code, is_square, band, mcd)
     cw, ch = fitted.size
-    width = cw + 2 * HORIZONTAL_PADDING_DOTS
+    width = cw + 2 * pad
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
     canvas.paste(fitted, ((width - cw) // 2, (PRINT_HEAD_DOTS - ch) // 2))
     return _apply_length(canvas, size)
@@ -570,6 +604,85 @@ def compose_aruco(
     )
 
 
+def compose_nozzle(
+    nozzle: str,
+    *,
+    source: str = "photo",
+    text: str | None = None,
+    invert: bool = True,
+    quiet_zone_modules: int = 0,
+    layout: str = "side",
+    separator: bool = True,
+    font_path: str | None = None,
+    font_size: int | None = None,
+    size: LabelSize | None = None,
+) -> Image.Image:
+    """Compose a Bambu nozzle label, ready for :func:`raster_from_composed`.
+
+    Two sources:
+
+    - ``source="photo"`` (default) reproduces the **exact** band -- Bambu's real
+      marker, typeface, and spacing -- from the bundled photo-derived band image
+      (:func:`brother_ptouch.codes.nozzle_band_image`). The band is the 16x5mm
+      heat-sink face, so ``size=LabelSize.from_mm(16, 5)`` prints it at true size.
+      The ``text``/``layout``/``separator``/font/``quiet_zone_modules`` args are
+      ignored -- they are baked into the photo.
+    - ``source="generated"`` builds the label from the decoded marker grid plus a
+      system font; use it for marker-only labels, custom text, or nozzles with no
+      bundled band. Here ``size``'s height is the marker grid height.
+
+    The nozzle band is physically white-on-black, so by default the result is
+    arranged for ordinary **black-on-white tape** (the printer lays down the black
+    field; the marker/text stay white). Pass ``invert=False`` for **white-on-black
+    tape** (the tape is the black background; only the marker/text print, in white).
+
+    Args:
+        nozzle: A nozzle name; see :func:`brother_ptouch.codes.normalize_nozzle`.
+        source: ``"photo"`` (exact, default) or ``"generated"``.
+        text: (generated only) text beside the marker; ``None`` for none.
+        invert: ``True`` (default) for black-on-white tape, ``False`` for black tape.
+        quiet_zone_modules: (generated only) black border around the marker.
+        layout, separator, font_path, font_size: (generated only) text layout/font.
+        size: An explicit :class:`LabelSize`; ``None`` keeps the auto behaviour.
+
+    Returns:
+        A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
+    """
+    if source not in ("photo", "generated"):
+        raise ValueError(f"source must be 'photo' or 'generated', got {source!r}")
+
+    if source == "photo":
+        band = codes.nozzle_band_image(nozzle)  # white content on a black field
+        # The printer prints dark pixels. Black-on-white tape: feed the band as-is
+        # (white-on-black) so the black field is inked and the content is bare tape.
+        # White-on-black tape: feed the inverse so only the content prints (white).
+        return compose_image(band if invert else ImageOps.invert(band), size=size)
+
+    img = codes.nozzle_image(nozzle, quiet_zone_modules=quiet_zone_modules)
+    # Module size (dots) the marker will scale to, so gaps/divider track the real
+    # band: ~1 module between marker, "|", and text; divider ~0.4 module wide.
+    band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
+    module = max(1, band // img.height)
+    composed = compose_code_label(
+        img, is_square=True, text=text, layout=layout, separator=separator,
+        font_path=font_path, font_size=font_size, size=size,
+        # The marker carries its own (module-scaled) quiet zone and a sized
+        # nozzle label sets its exact length, so skip the ~2mm end padding that
+        # would otherwise fight a small physical size.
+        pad=0,
+        # The nozzle marker is reproduced at the nozzle's real size (~2.2mm /
+        # ~16 dots tall), well under the QR/barcode MIN_CODE_DOTS floor; the
+        # marker height itself is the only real lower bound.
+        min_code_dots=img.height,
+        # Tight, real-band spacing instead of the default ~2mm code gap.
+        gap=module,
+        sep_w=max(1, round(0.4 * module)),
+    )
+    if invert:
+        composed = ImageOps.invert(composed if composed.mode == "L" else composed.convert("L"))
+    return composed
+
+
 def qr_to_raster(data: str, **kwargs) -> tuple[bytes, int]:
     """Render a QR label straight to ``(bitmap, raster_lines)``."""
     return raster_from_composed(compose_qr(data, **kwargs))
@@ -583,6 +696,11 @@ def barcode_to_raster(data: str, **kwargs) -> tuple[bytes, int]:
 def aruco_to_raster(marker_id: int, **kwargs) -> tuple[bytes, int]:
     """Render an ArUco label straight to ``(bitmap, raster_lines)``."""
     return raster_from_composed(compose_aruco(marker_id, **kwargs))
+
+
+def nozzle_to_raster(nozzle: str, **kwargs) -> tuple[bytes, int]:
+    """Render a Bambu nozzle-marker label straight to ``(bitmap, raster_lines)``."""
+    return raster_from_composed(compose_nozzle(nozzle, **kwargs))
 
 
 # Public-API aliases matching the package's documented surface.

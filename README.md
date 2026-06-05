@@ -53,6 +53,7 @@ ptouch text    --text STR     [--font PATH] [--font-size N] [--orientation horiz
 ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
 ptouch barcode --data STR     [--symbology code128|ean13|...]  [code opts] [output opts]
 ptouch aruco   --id N         [--dict 4X4_50|5X5_100|...]      [code opts] [output opts]
+ptouch nozzle  NAME           [--no-invert] [--generated [--no-text] [--no-separator]] [output opts]
 ptouch list                   # list reachable printers
 
 # code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
@@ -120,6 +121,48 @@ Notes:
 - **ArUco** `--dict` is any OpenCV predefined dictionary, with or without the
   `DICT_` prefix (`4X4_50`, `5X5_100`, `6X6_250`, `7X7_1000`, `APRILTAG_36h11`, …);
   a white quiet zone is baked in so detectors can find it.
+
+### Bambu nozzle markers
+
+`ptouch nozzle NAME` reproduces the band the Bambu H2D/H2C hot-end camera reads to
+identify the installed nozzle — the `[marker] │ [text]` strip on the heat-sink
+face. The marker is **not** ArUco; it's a custom Bambu 3×7 module grid.
+
+`NAME` accepts forms like `WC0.4`, `wc.4`, `WC 0.4`, `wc4`, `0.4`, `HF0.6`,
+`HFWC0.8`. Materials: stainless (none), `HF` (high flow), `WC` (tungsten
+carbide), `HFWC`; diameters `0.2`/`0.4`/`0.6`/`0.8` (only `0.2` for stainless).
+
+By default it prints the **exact band** — Bambu's real marker, typeface, and
+spacing — from a cleaned, bundled image of each nozzle (under
+`brother_ptouch/nozzle_bands/`, ~2 KB each). The band is the **16×5 mm** heat-sink
+face, so with no `--size` it prints at true physical size; pass `--size` to scale.
+
+```bash
+# WC 0.4 — exact band, actual nozzle size, ordinary black-on-white tape
+ptouch nozzle WC0.4 --out nz.bin --preview nz.png
+
+# Same, for black (white-on-black) tape
+ptouch nozzle WC0.4 --no-invert --printer "$P"
+```
+
+**Tape polarity.** The band is white-on-black. On normal **black-on-white tape**
+the printer lays down the black field and leaves the marker/text as bare tape
+(default). On **white-on-black tape** pass `--no-invert`: only the marker/text
+print (in white) and the tape is the black background — far less ink, closer match.
+
+**`--generated`** builds the label from the decoded marker grid + a system font
+instead of the photo band — use it for marker-only labels (`--no-text`), custom
+`--text`, or `--no-separator`. It needs no image asset (Pillow only). Here
+`--size`'s height is the marker grid height (e.g. `--size 16x2.2`). Note: only the
+default **photo band** has been recognized by an H2D; `--generated` (different
+text font/spacing) hasn't been hardware-tested.
+
+> **Status.** ✅ **Hardware-confirmed:** a printed **WC.4** label from this lib was
+> recognized by an **H2D** (2026-06-04), so relabeling a third-party Diamondback
+> nozzle as WC works. All 13 markers are verified (the WC markers match Diamondback
+> bit-for-bit); bands are cleaned from real nozzle photos. Only WC.4 has been
+> hardware-tested so far — other sizes/materials should follow by the same
+> mechanism.
 
 ### Exact size
 

@@ -5,6 +5,7 @@
     ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
     ptouch barcode --data STR     [--symbology code128|ean13|...] [code opts] [output opts]
     ptouch aruco   --id N         [--dict 4X4_50|...] [code opts] [output opts]
+    ptouch nozzle  NAME           [--no-text] [--no-invert] [code opts] [output opts]
     ptouch list                   # list reachable printers
 
   code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
@@ -32,6 +33,7 @@ from .render import (
     compose_aruco,
     compose_barcode,
     compose_image,
+    compose_nozzle,
     compose_qr,
     compose_text,
     raster_from_composed,
@@ -168,6 +170,35 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_code_opts(p_ar)
     _add_output_args(p_ar)
 
+    p_nz = sub.add_parser("nozzle", help="print a Bambu nozzle label (white-on-black)")
+    p_nz.add_argument("nozzle", help="nozzle name, e.g. WC0.4, HF0.6, HFWC0.8, 0.4")
+    p_nz.add_argument(
+        "--generated", action="store_true",
+        help="build the label from the decoded marker grid + a system font "
+             "(customizable) instead of the exact photo-derived band (default)",
+    )
+    p_nz.add_argument(
+        "--no-text", dest="no_text", action="store_true",
+        help="(--generated only) print the marker alone, without the text",
+    )
+    p_nz.add_argument(
+        "--invert", default=True, action=argparse.BooleanOptionalAction,
+        help="invert to white-on-black for ordinary black-on-white tape "
+             "(default); --no-invert for white-on-black tape",
+    )
+    p_nz.add_argument(
+        "--quiet-zone", type=int, default=0, dest="quiet_zone",
+        help="black border around the marker, in modules (default 0; the "
+             "inverted field / black tape already surrounds it)",
+    )
+    p_nz.add_argument(
+        "--separator", default=True, action=argparse.BooleanOptionalAction,
+        help="draw the | divider between the marker and the text, as on the "
+             "nozzle (default); --no-separator to omit it",
+    )
+    _add_code_opts(p_nz)
+    _add_output_args(p_nz)
+
     sub.add_parser("list", help="list reachable printers")
     return parser
 
@@ -290,6 +321,37 @@ def _cmd_aruco(args: argparse.Namespace) -> int:
     return _emit(args, cfg, bitmap, raster_lines, composed)
 
 
+def _cmd_nozzle(args: argparse.Namespace) -> int:
+    from .codes import nozzle_text
+
+    cfg = resolve_config(args.config)
+    # The bundled band IS the 16x5mm heat-sink face: when no size is given, default
+    # to that exact physical size so the photo band prints 1:1. Set args.size (not
+    # just the parsed value) so _emit() also suppresses the default leading feed
+    # margin -- otherwise the "actual size" label would be ~2mm longer than 16mm.
+    if not args.generated and args.size is None:
+        args.size = "16x5"
+    size = _parse_size(args.size)
+    if args.generated:
+        text = None if args.no_text else _first(args.text, nozzle_text(args.nozzle))
+        composed = compose_nozzle(
+            args.nozzle,
+            source="generated",
+            text=text,
+            invert=args.invert,
+            quiet_zone_modules=args.quiet_zone,
+            separator=args.separator,
+            layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
+            font_path=_first(args.font, cfg.font),
+            font_size=_first(args.font_size, cfg.font_size),
+            size=size,
+        )
+    else:
+        composed = compose_nozzle(args.nozzle, source="photo", invert=args.invert, size=size)
+    bitmap, raster_lines = raster_from_composed(composed)
+    return _emit(args, cfg, bitmap, raster_lines, composed)
+
+
 def _cmd_list(args: argparse.Namespace) -> int:
     from .transport import list_printers
 
@@ -313,6 +375,7 @@ def main(argv: list[str] | None = None) -> int:
         "qr": _cmd_qr,
         "barcode": _cmd_barcode,
         "aruco": _cmd_aruco,
+        "nozzle": _cmd_nozzle,
         "list": _cmd_list,
     }
     try:
