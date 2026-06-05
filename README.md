@@ -155,10 +155,12 @@ instead of the photo band — use it for marker-only labels (`--no-text`), custo
 `--text`, or `--no-separator`. It needs no image asset (Pillow only). Here
 `--size`'s height is the marker grid height (e.g. `--size 16x2.2`).
 
-> **Status / caveats.** All 13 markers are verified (the WC markers match
-> third-party Diamondback nozzles bit-for-bit). The bundled bands are cleaned from
-> real nozzle photos. Whether the H2D actually *accepts* a printed replica is
-> **not yet confirmed on hardware** — consider it experimental.
+> **Status.** ✅ **Hardware-confirmed:** a printed **WC.4** label from this lib was
+> recognized by an **H2D** (2026-06-04), so relabeling a third-party Diamondback
+> nozzle as WC works. All 13 markers are verified (the WC markers match Diamondback
+> bit-for-bit); bands are cleaned from real nozzle photos. Only WC.4 has been
+> hardware-tested so far — other sizes/materials should follow by the same
+> mechanism.
 
 ### Exact size
 
