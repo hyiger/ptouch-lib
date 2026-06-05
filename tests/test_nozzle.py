@@ -7,14 +7,15 @@ Pillow only), so the whole file runs on a Pillow-only install.
 import pytest
 
 from brother_ptouch.cli import main
-from brother_ptouch.codes import (
+from brother_ptouch.encoder import PRINT_HEAD_DOTS, encode_label
+from brother_ptouch.nozzle import (
     NOZZLE_MARKERS,
+    compose_nozzle,
     normalize_nozzle,
     nozzle_image,
     nozzle_text,
 )
-from brother_ptouch.encoder import PRINT_HEAD_DOTS, encode_label
-from brother_ptouch.render import LabelSize, compose_nozzle, raster_from_composed
+from brother_ptouch.render import LabelSize, raster_from_composed
 from brother_ptouch.simulator import decode, to_preview_image
 
 
@@ -101,7 +102,7 @@ def test_nozzle_image_quiet_zone_is_white():
 
 
 def test_every_marker_has_a_bundled_band():
-    from brother_ptouch.codes import nozzle_band_image
+    from brother_ptouch.nozzle import nozzle_band_image
 
     for key in NOZZLE_MARKERS:
         img = nozzle_band_image(key)
@@ -112,7 +113,7 @@ def test_every_marker_has_a_bundled_band():
 
 
 def test_photo_band_missing_raises():
-    from brother_ptouch.codes import nozzle_band_image
+    from brother_ptouch.nozzle import nozzle_band_image
 
     with pytest.raises(ValueError, match="diameter|unknown|no band image"):
         nozzle_band_image("ZZ9")

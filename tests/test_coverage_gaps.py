@@ -7,7 +7,8 @@
 
 import pytest
 
-from brother_ptouch.render import LabelSize, compose_nozzle
+from brother_ptouch.nozzle import compose_nozzle
+from brother_ptouch.render import LabelSize
 from brother_ptouch.simulator import DecodeError, decode, to_preview_image
 
 
