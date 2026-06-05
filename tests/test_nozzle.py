@@ -7,14 +7,15 @@ Pillow only), so the whole file runs on a Pillow-only install.
 import pytest
 
 from brother_ptouch.cli import main
-from brother_ptouch.codes import (
+from brother_ptouch.encoder import PRINT_HEAD_DOTS, encode_label
+from brother_ptouch.nozzle import (
     NOZZLE_MARKERS,
+    compose_nozzle,
     normalize_nozzle,
     nozzle_image,
     nozzle_text,
 )
-from brother_ptouch.encoder import PRINT_HEAD_DOTS, encode_label
-from brother_ptouch.render import LabelSize, compose_nozzle, raster_from_composed
+from brother_ptouch.render import LabelSize, raster_from_composed
 from brother_ptouch.simulator import decode, to_preview_image
 
 
@@ -62,6 +63,42 @@ def test_nozzle_text(raw, expected):
     assert nozzle_text(raw) == expected
 
 
+def test_backcompat_submodule_import_paths():
+    # The nozzle API moved to brother_ptouch.nozzle, but the pre-refactor
+    # submodule paths still resolve via module __getattr__ forwarding.
+    from brother_ptouch.codes import NOZZLE_MARKERS as _markers
+    from brother_ptouch.codes import nozzle_band_image as _band
+    from brother_ptouch.codes import nozzle_image as _img
+    from brother_ptouch.render import compose_nozzle as _compose
+    from brother_ptouch.render import nozzle_to_raster as _to_raster
+
+    assert "WC0.4" in _markers
+    assert all(callable(f) for f in (_img, _band, _compose, _to_raster))
+    # forwarders return the real objects from .nozzle
+    import brother_ptouch.nozzle as nz
+    assert _compose is nz.compose_nozzle
+
+
+def test_backcompat_star_imports_resolve_moved_names():
+    # `from brother_ptouch.codes import *` binds names via __all__, which routes
+    # the moved nozzle names through the module __getattr__ forwarder (PEP 562).
+    ns: dict = {}
+    exec("from brother_ptouch.codes import *", ns)
+    for name in ("NOZZLE_MARKERS", "normalize_nozzle", "nozzle_text",
+                 "nozzle_image", "nozzle_band_image"):
+        assert name in ns, name
+    ns = {}
+    exec("from brother_ptouch.render import *", ns)
+    for name in ("compose_nozzle", "nozzle_to_raster"):
+        assert name in ns, name
+
+
+def test_codes_getattr_still_raises_for_unknown():
+    import brother_ptouch.codes as c
+    with pytest.raises(AttributeError):
+        _ = c.does_not_exist
+
+
 def test_unknown_nozzle_rejected():
     with pytest.raises(ValueError, match="unknown nozzle"):
         normalize_nozzle("HF0.2")  # HF has no 0.2
@@ -101,7 +138,7 @@ def test_nozzle_image_quiet_zone_is_white():
 
 
 def test_every_marker_has_a_bundled_band():
-    from brother_ptouch.codes import nozzle_band_image
+    from brother_ptouch.nozzle import nozzle_band_image
 
     for key in NOZZLE_MARKERS:
         img = nozzle_band_image(key)
@@ -112,7 +149,7 @@ def test_every_marker_has_a_bundled_band():
 
 
 def test_photo_band_missing_raises():
-    from brother_ptouch.codes import nozzle_band_image
+    from brother_ptouch.nozzle import nozzle_band_image
 
     with pytest.raises(ValueError, match="diameter|unknown|no band image"):
         nozzle_band_image("ZZ9")

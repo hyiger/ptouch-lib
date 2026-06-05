@@ -29,12 +29,12 @@ import tempfile
 from . import __version__
 from .config import Config, resolve_config
 from .encoder import encode_label
+from .nozzle import compose_nozzle, nozzle_text
 from .render import (
     LabelSize,
     compose_aruco,
     compose_barcode,
     compose_image,
-    compose_nozzle,
     compose_qr,
     compose_text,
     raster_from_composed,
@@ -328,8 +328,6 @@ def _cmd_aruco(args: argparse.Namespace) -> int:
 
 
 def _cmd_nozzle(args: argparse.Namespace) -> int:
-    from .codes import nozzle_text
-
     cfg = resolve_config(args.config)
     # The bundled band IS the 16x5mm heat-sink face: when no size is given, default
     # to that exact physical size so the photo band prints 1:1. Set args.size (not

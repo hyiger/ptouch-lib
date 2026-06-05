@@ -17,12 +17,13 @@ generators are optional extras.
 |---|---|
 | `render.py` | `compose_*()` build a PIL **`"L"`** image in human-reading orientation (`length × 128` dots). `raster_from_composed()` turns it into the 1-bit bitmap. `LabelSize` / `--size` live here. |
 | `encoder.py` | Pure, **zero-dependency, byte-exact** Brother raster protocol. `encode_label(bitmap, raster_lines, ...)`. |
-| `codes.py` | QR / barcode / ArUco generators (optional libs, **lazy-imported**) + Bambu nozzle markers (`nozzle_image` generated, `nozzle_band_image` bundled photo). |
+| `codes.py` | QR / barcode / ArUco generators only (optional libs, **lazy-imported**). |
+| `nozzle.py` | **All Bambu nozzle code** — the decoded `NOZZLE_MARKERS` table, `normalize_nozzle`/`nozzle_text`, `nozzle_image` (generated grid), `nozzle_band_image` (bundled photo), and `compose_nozzle`. Pillow-only; depends on `render` for the shared pipeline. |
 | `cli.py` | argparse `ptouch` CLI. `_emit()` is the shared output sink: `--out` → `--printer` → config printer → temp file. |
 | `config.py` | Flat TOML defaults, **strict** (unknown keys are an error). Precedence: CLI flag > config > built-in default. |
-| `transport.py` | Print via CUPS (`lp -o raw`, an auto-managed queue) or Windows (pywin32 / PowerShell fallback); `list_printers()`. |
+| `transport.py` | Print via CUPS (`lp -o raw`, an auto-managed queue) or Windows (pywin32 / PowerShell fallback); `list_printers()` / `has_print_system()`. |
 | `simulator.py` | Decode a printed byte stream back to a PNG — the basis of most tests. |
-| `nozzle_bands/*.png` | 13 cleaned photos of the real nozzle bands, shipped as package data. |
+| `nozzle_bands/*.png` | 13 cleaned photos of the real nozzle bands, shipped as package data (loaded by `nozzle.py`). |
 
 ## Critical invariants — do not break these
 

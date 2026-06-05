@@ -30,16 +30,7 @@ from __future__ import annotations
 
 __version__ = "0.1.1"
 
-from .codes import (
-    NOZZLE_MARKERS,
-    aruco_image,
-    barcode_image,
-    normalize_nozzle,
-    nozzle_band_image,
-    nozzle_image,
-    nozzle_text,
-    qr_image,
-)
+from .codes import aruco_image, barcode_image, qr_image
 from .config import Config, ConfigError, load_config, resolve_config
 from .encoder import (
     BYTES_PER_RASTER_LINE,
@@ -50,6 +41,15 @@ from .encoder import (
     pack_grayscale_bitmap,
     pack_grayscale_row,
 )
+from .nozzle import (
+    NOZZLE_MARKERS,
+    compose_nozzle,
+    normalize_nozzle,
+    nozzle_band_image,
+    nozzle_image,
+    nozzle_text,
+    nozzle_to_raster,
+)
 from .render import (
     DOTS_PER_MM,
     LabelSize,
@@ -59,11 +59,9 @@ from .render import (
     compose_barcode,
     compose_code_label,
     compose_image,
-    compose_nozzle,
     compose_qr,
     compose_text,
     image_to_raster,
-    nozzle_to_raster,
     qr_to_raster,
     raster_from_composed,
     render_image,

@@ -40,16 +40,20 @@ __all__ = [
     "compose_qr",
     "compose_barcode",
     "compose_aruco",
-    "compose_nozzle",
     "raster_from_composed",
     "image_to_raster",
     "text_to_raster",
     "qr_to_raster",
     "barcode_to_raster",
     "aruco_to_raster",
-    "nozzle_to_raster",
     "render_image",
     "render_text",
+    # Back-compat: moved to brother_ptouch.nozzle; kept in __all__ (and forwarded
+    # via __getattr__ below) so `from brother_ptouch.render import compose_nozzle`
+    # and `from brother_ptouch.render import *` keep working. They resolve
+    # dynamically via __getattr__, so F822 (undefined export) is a false positive.
+    "compose_nozzle",  # noqa: F822
+    "nozzle_to_raster",  # noqa: F822
 ]
 
 #: 180 dpi print head -> dots per millimetre.
@@ -631,85 +635,6 @@ def compose_aruco(
     )
 
 
-def compose_nozzle(
-    nozzle: str,
-    *,
-    source: str = "photo",
-    text: str | None = None,
-    invert: bool = True,
-    quiet_zone_modules: int = 0,
-    layout: str = "side",
-    separator: bool = True,
-    font_path: str | None = None,
-    font_size: int | None = None,
-    size: LabelSize | None = None,
-) -> Image.Image:
-    """Compose a Bambu nozzle label, ready for :func:`raster_from_composed`.
-
-    Two sources:
-
-    - ``source="photo"`` (default) reproduces the **exact** band -- Bambu's real
-      marker, typeface, and spacing -- from the bundled photo-derived band image
-      (:func:`brother_ptouch.codes.nozzle_band_image`). The band is the 16x5mm
-      heat-sink face, so ``size=LabelSize.from_mm(16, 5)`` prints it at true size.
-      The ``text``/``layout``/``separator``/font/``quiet_zone_modules`` args are
-      ignored -- they are baked into the photo.
-    - ``source="generated"`` builds the label from the decoded marker grid plus a
-      system font; use it for marker-only labels, custom text, or nozzles with no
-      bundled band. Here ``size``'s height is the marker grid height.
-
-    The nozzle band is physically white-on-black, so by default the result is
-    arranged for ordinary **black-on-white tape** (the printer lays down the black
-    field; the marker/text stay white). Pass ``invert=False`` for **white-on-black
-    tape** (the tape is the black background; only the marker/text print, in white).
-
-    Args:
-        nozzle: A nozzle name; see :func:`brother_ptouch.codes.normalize_nozzle`.
-        source: ``"photo"`` (exact, default) or ``"generated"``.
-        text: (generated only) text beside the marker; ``None`` for none.
-        invert: ``True`` (default) for black-on-white tape, ``False`` for black tape.
-        quiet_zone_modules: (generated only) black border around the marker.
-        layout, separator, font_path, font_size: (generated only) text layout/font.
-        size: An explicit :class:`LabelSize`; ``None`` keeps the auto behaviour.
-
-    Returns:
-        A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
-    """
-    if source not in ("photo", "generated"):
-        raise ValueError(f"source must be 'photo' or 'generated', got {source!r}")
-
-    if source == "photo":
-        band = codes.nozzle_band_image(nozzle)  # white content on a black field
-        # The printer prints dark pixels. Black-on-white tape: feed the band as-is
-        # (white-on-black) so the black field is inked and the content is bare tape.
-        # White-on-black tape: feed the inverse so only the content prints (white).
-        return compose_image(band if invert else ImageOps.invert(band), size=size)
-
-    img = codes.nozzle_image(nozzle, quiet_zone_modules=quiet_zone_modules)
-    # Module size (dots) the marker will scale to, so gaps/divider track the real
-    # band: ~1 module between marker, "|", and text; divider ~0.4 module wide.
-    band_dots = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
-    module = max(1, band_dots // img.height)
-    composed = compose_code_label(
-        img, is_square=True, text=text, layout=layout, separator=separator,
-        font_path=font_path, font_size=font_size, size=size,
-        # The marker carries its own (module-scaled) quiet zone and a sized
-        # nozzle label sets its exact length, so skip the ~2mm end padding that
-        # would otherwise fight a small physical size.
-        pad=0,
-        # The nozzle marker is reproduced at the nozzle's real size (~2.2mm /
-        # ~16 dots tall), well under the QR/barcode MIN_CODE_DOTS floor; the
-        # marker height itself is the only real lower bound.
-        min_code_dots=img.height,
-        # Tight, real-band spacing instead of the default ~2mm code gap.
-        gap=module,
-        sep_w=max(1, round(0.4 * module)),
-    )
-    if invert:
-        composed = ImageOps.invert(composed if composed.mode == "L" else composed.convert("L"))
-    return composed
-
-
 def qr_to_raster(data: str, **kwargs) -> tuple[bytes, int]:
     """Render a QR label straight to ``(bitmap, raster_lines)``."""
     return raster_from_composed(compose_qr(data, **kwargs))
@@ -725,11 +650,18 @@ def aruco_to_raster(marker_id: int, **kwargs) -> tuple[bytes, int]:
     return raster_from_composed(compose_aruco(marker_id, **kwargs))
 
 
-def nozzle_to_raster(nozzle: str, **kwargs) -> tuple[bytes, int]:
-    """Render a Bambu nozzle-marker label straight to ``(bitmap, raster_lines)``."""
-    return raster_from_composed(compose_nozzle(nozzle, **kwargs))
-
-
 # Public-API aliases matching the package's documented surface.
 render_image = image_to_raster
 render_text = text_to_raster
+
+
+def __getattr__(name: str):
+    # Back-compat: the Bambu nozzle compose helpers moved to brother_ptouch.nozzle.
+    # Forward the old `brother_ptouch.render.<name>` paths lazily so importing
+    # them still works (a top-level import here would be circular: nozzle imports
+    # render).
+    if name in ("compose_nozzle", "nozzle_to_raster"):
+        from . import nozzle
+
+        return getattr(nozzle, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
