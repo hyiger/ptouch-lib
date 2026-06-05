@@ -7,8 +7,9 @@ Guidance for AI agents (and humans) working in this repository.
 `brother-ptouch` — a Python 3.10+ library and `ptouch` CLI that renders labels
 (image, text, QR, barcode, ArUco, and **Bambu nozzle marker bands**) and prints
 them on a **Brother PT-P710BT** (P-touch CUBE) on 24 mm TZe tape, over USB via
-the host OS print system (CUPS / Windows spooler). The core depends only on
-**Pillow**; the code generators are optional extras.
+the host OS print system (CUPS / Windows spooler). The core needs only **Pillow**
+(plus `tomli` on Python 3.10, where `tomllib` is not yet stdlib); the code
+generators are optional extras.
 
 ## Architecture — the pipeline is `compose → raster → encode → transport`
 
@@ -62,8 +63,9 @@ uv build                                               # wheel + sdist
 - **ruff** (rules E,F,I,W,UP,B), line length **110**, target `py310`.
 - Google-style docstrings; type hints throughout (`from __future__ import annotations`).
 - Optional deps (`cv2`, `qrcode`, `barcode`, `pywin32`) are **lazy-imported inside
-  functions** so importing the package needs only Pillow; a missing lib raises a
-  clear `pip install 'brother-ptouch[...]'` error.
+  functions** so importing the package pulls in only the core deps (Pillow, plus
+  `tomli` on 3.10); a missing optional lib raises a clear
+  `pip install 'brother-ptouch[...]'` error.
 
 ## Adding a new code command (the established pattern)
 
