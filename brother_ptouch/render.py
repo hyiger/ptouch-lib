@@ -212,7 +212,7 @@ def _load_font(font_path: str | None, size: int) -> ImageFont.FreeTypeFont:
         except OSError:
             continue
     # Pillow >= 10.1 returns a scalable DejaVuSans when given a size.
-    return ImageFont.load_default(size=size)
+    return ImageFont.load_default(size=size)  # type: ignore[return-value]
 
 
 def _line_height(font: ImageFont.FreeTypeFont) -> int:
@@ -356,7 +356,7 @@ def compose_image(source: ImageSource, *, size: LabelSize | None = None) -> Imag
     new_w = max(1, round(w * band / h))
     _guard_length(new_w)  # reject extreme-aspect images before the resize allocates
     if (new_w, band) != (w, h):
-        img = img.resize((new_w, band), Image.LANCZOS)
+        img = img.resize((new_w, band), Image.Resampling.LANCZOS)
     if band != PRINT_HEAD_DOTS:
         canvas = Image.new("L", (new_w, PRINT_HEAD_DOTS), 255)
         canvas.paste(img, (0, (PRINT_HEAD_DOTS - band) // 2))
@@ -469,10 +469,10 @@ def _fit_code(code: Image.Image, is_square: bool, max_h: int, min_dots: int = MI
                 "on 24mm tape -- shorten the payload/text, or use --layout side"
             )
         if factor > 1:
-            code = code.resize((w * factor, h * factor), Image.NEAREST)
+            code = code.resize((w * factor, h * factor), Image.Resampling.NEAREST)
         return code
     if h != max_h:
-        code = code.resize((w, max_h), Image.NEAREST)
+        code = code.resize((w, max_h), Image.Resampling.NEAREST)
     return code
 
 
@@ -688,8 +688,8 @@ def compose_nozzle(
     img = codes.nozzle_image(nozzle, quiet_zone_modules=quiet_zone_modules)
     # Module size (dots) the marker will scale to, so gaps/divider track the real
     # band: ~1 module between marker, "|", and text; divider ~0.4 module wide.
-    band = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
-    module = max(1, band // img.height)
+    band_dots = _band_for(size, PRINT_HEAD_DOTS - 2 * VERTICAL_PADDING_DOTS)
+    module = max(1, band_dots // img.height)
     composed = compose_code_label(
         img, is_square=True, text=text, layout=layout, separator=separator,
         font_path=font_path, font_size=font_size, size=size,

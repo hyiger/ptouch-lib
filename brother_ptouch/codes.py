@@ -211,7 +211,7 @@ def aruco_image(
         if hasattr(cv2.aruco, "generateImageMarker"):  # OpenCV >= 4.7
             arr = cv2.aruco.generateImageMarker(d, int(marker_id), side, borderBits=1)
         else:  # pragma: no cover - very old OpenCV
-            arr = cv2.aruco.drawMarker(d, int(marker_id), side)
+            arr = cv2.aruco.drawMarker(d, int(marker_id), side)  # type: ignore[attr-defined]
     except cv2.error as err:
         raise ValueError(
             f"invalid marker id {marker_id} for dictionary {dictionary!r}: {err}"
