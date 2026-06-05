@@ -21,6 +21,7 @@ the config, which wins over the built-in defaults. See ``config.py``.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 import tempfile
@@ -248,9 +249,14 @@ def _emit(args: argparse.Namespace, cfg: Config, bitmap: bytes, raster_lines: in
         print(f"sent {len(data)} bytes -> {target}", file=sys.stderr)
         return 0
 
-    out_path = os.path.join(tempfile.gettempdir(), "label.bin")
-    with open(out_path, "wb") as fh:
+    # No target: write to a unique, per-user temp file. NamedTemporaryFile uses
+    # O_EXCL + 0600, avoiding the symlink-overwrite / info-leak of a predictable
+    # shared path like /tmp/label.bin. (audit #13)
+    with tempfile.NamedTemporaryFile(
+        prefix="ptouch-label-", suffix=".bin", delete=False
+    ) as fh:
         fh.write(data)
+        out_path = fh.name
     print(f"no --out/--printer/config printer; wrote {len(data)} bytes -> {out_path}", file=sys.stderr)
     return 0
 
@@ -353,15 +359,27 @@ def _cmd_nozzle(args: argparse.Namespace) -> int:
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
-    from .transport import list_printers
+    from .transport import has_print_system, list_printers
 
     devices = list_printers()
-    if not devices:
-        print("No printers found.", file=sys.stderr)
-        return 0
     for d in devices:
         badge = " *" if d.looks_like_printer else "  "
         print(f"{badge} {d.friendly_name}\n     {d.path}")
+    if not devices:
+        # Distinguish "no print system" from "system reachable but no devices"
+        # so a CUPS/permissions problem isn't misreported as zero printers. (audit #15)
+        if not has_print_system():
+            print(
+                "No supported print system detected (CUPS on macOS/Linux, the "
+                "spooler on Windows).",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "No printers found. If one is attached, check the print system is "
+                "running and that you can query it (set PTOUCH_DEBUG=1 for details).",
+                file=sys.stderr,
+            )
     return 0
 
 
@@ -369,6 +387,11 @@ def main(argv: list[str] | None = None) -> int:
     """Console entry point. Returns a process exit code."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if os.environ.get("PTOUCH_DEBUG"):
+        # Make the hint real: surface the library's DEBUG diagnostics (e.g. the
+        # transport CUPS-query failures behind a "No printers found"). (audit #15)
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s: %(message)s")
+        logging.getLogger("brother_ptouch").setLevel(logging.DEBUG)
     handlers = {
         "image": _cmd_image,
         "text": _cmd_text,
@@ -381,7 +404,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return handlers[args.command](args)
     except Exception as err:
-        print(f"error: {err}", file=sys.stderr)
+        # Show the exception type (str(err) is empty/opaque for many errors), and
+        # the full traceback when PTOUCH_DEBUG is set. (audit #14)
+        print(f"error: {type(err).__name__}: {err}", file=sys.stderr)
+        if os.environ.get("PTOUCH_DEBUG"):
+            import traceback
+
+            traceback.print_exc()
         return 1
 
 

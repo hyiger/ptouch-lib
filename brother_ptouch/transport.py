@@ -21,14 +21,18 @@ needs-hardware-confirmation.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 
-__all__ = ["PrinterDevice", "list_printers", "print_raster", "PrintError"]
+__all__ = ["PrinterDevice", "list_printers", "has_print_system", "print_raster", "PrintError"]
+
+_log = logging.getLogger(__name__)
 
 #: Heuristic match for "this printer/device is a PT-series label printer".
 _PRINTER_PATTERN = re.compile(r"pt-?p710bt|p-?touch|brother", re.IGNORECASE)
@@ -64,6 +68,24 @@ class PrinterDevice:
 
 def _is_cups() -> bool:
     return sys.platform in ("darwin", "linux")
+
+
+def has_print_system() -> bool:
+    """True if a supported print system is available (CUPS or the Windows spooler).
+
+    Lets callers tell "no print system" apart from "system reachable but no
+    printers" instead of conflating both as an empty list. On macOS/Linux this
+    actually probes for the CUPS client tools (a platform check alone would say
+    True on a host that has no CUPS installed). A present-but-stopped cupsd still
+    reports True -- that case surfaces as the "check the system is running" hint.
+    """
+    if sys.platform == "win32":
+        return True
+    if _is_cups():
+        return any(
+            shutil.which(t) or shutil.which(t, path=_SBIN) for t in ("lpstat", "lp")
+        )
+    return False
 
 
 def _run_cups_tool(tool: str, args: list[str]) -> str:
@@ -110,7 +132,8 @@ def list_printers() -> list[PrinterDevice]:
         if _is_cups():
             return _list_cups_printers()
         return []
-    except Exception:
+    except Exception as err:  # never raises -- but record why for diagnostics
+        _log.debug("could not query the print system: %s: %s", type(err).__name__, err)
         return []
 
 
@@ -139,8 +162,8 @@ def _list_cups_printers() -> list[PrinterDevice]:
             devices.append(
                 PrinterDevice(name, name, bool(_PRINTER_PATTERN.search(f"{name} {uri}")))
             )
-    except Exception:
-        pass  # no installed queues / lpstat unavailable -- fall through
+    except Exception as err:
+        _log.debug("lpstat -v failed: %s: %s", type(err).__name__, err)  # fall through
 
     # 2. Available USB devices not already installed as a queue.
     #    Scope to the usb scheme: a bare `lpinfo -v` also runs the snmp/dnssd
@@ -159,8 +182,8 @@ def _list_cups_printers() -> list[PrinterDevice]:
             devices.append(
                 PrinterDevice(uri, _prettify_usb_uri(uri), bool(_PRINTER_PATTERN.search(uri)))
             )
-    except Exception:
-        pass  # lpinfo may need elevated privileges on some Linux distros
+    except Exception as err:  # lpinfo may need elevated privileges on some distros
+        _log.debug("lpinfo failed: %s: %s", type(err).__name__, err)
 
     return devices
 
