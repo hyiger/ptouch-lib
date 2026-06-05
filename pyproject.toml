@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "brother-ptouch"
-version = "0.1.0"
+version = "0.1.1"
 description = "Library + CLI to print labels on a Brother PT-P710BT (P-touch CUBE) on 24mm TZe tape"
 readme = "README.md"
 requires-python = ">=3.10"
