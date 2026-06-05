@@ -48,6 +48,12 @@ __all__ = [
     "aruco_to_raster",
     "render_image",
     "render_text",
+    # Back-compat: moved to brother_ptouch.nozzle; kept in __all__ (and forwarded
+    # via __getattr__ below) so `from brother_ptouch.render import compose_nozzle`
+    # and `from brother_ptouch.render import *` keep working. They resolve
+    # dynamically via __getattr__, so F822 (undefined export) is a false positive.
+    "compose_nozzle",  # noqa: F822
+    "nozzle_to_raster",  # noqa: F822
 ]
 
 #: 180 dpi print head -> dots per millimetre.

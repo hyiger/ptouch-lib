@@ -79,6 +79,20 @@ def test_backcompat_submodule_import_paths():
     assert _compose is nz.compose_nozzle
 
 
+def test_backcompat_star_imports_resolve_moved_names():
+    # `from brother_ptouch.codes import *` binds names via __all__, which routes
+    # the moved nozzle names through the module __getattr__ forwarder (PEP 562).
+    ns: dict = {}
+    exec("from brother_ptouch.codes import *", ns)
+    for name in ("NOZZLE_MARKERS", "normalize_nozzle", "nozzle_text",
+                 "nozzle_image", "nozzle_band_image"):
+        assert name in ns, name
+    ns = {}
+    exec("from brother_ptouch.render import *", ns)
+    for name in ("compose_nozzle", "nozzle_to_raster"):
+        assert name in ns, name
+
+
 def test_codes_getattr_still_raises_for_unknown():
     import brother_ptouch.codes as c
     with pytest.raises(AttributeError):

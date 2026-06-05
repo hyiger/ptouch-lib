@@ -27,6 +27,16 @@ __all__ = [
     "qr_image",
     "barcode_image",
     "aruco_image",
+    # Back-compat: these moved to brother_ptouch.nozzle. They're kept in __all__
+    # (and forwarded via __getattr__ below) so the pre-refactor submodule API
+    # keeps working for both `from brother_ptouch.codes import nozzle_image` and
+    # `from brother_ptouch.codes import *`. They resolve dynamically via
+    # __getattr__, so F822 (undefined export) is a false positive here.
+    "NOZZLE_MARKERS",  # noqa: F822
+    "normalize_nozzle",  # noqa: F822
+    "nozzle_text",  # noqa: F822
+    "nozzle_image",  # noqa: F822
+    "nozzle_band_image",  # noqa: F822
 ]
 
 #: 180 dpi print head -> dots per mm (python-barcode wants mm + dpi).
