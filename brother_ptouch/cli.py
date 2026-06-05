@@ -21,6 +21,7 @@ the config, which wins over the built-in defaults. See ``config.py``.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 import tempfile
@@ -386,6 +387,11 @@ def main(argv: list[str] | None = None) -> int:
     """Console entry point. Returns a process exit code."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if os.environ.get("PTOUCH_DEBUG"):
+        # Make the hint real: surface the library's DEBUG diagnostics (e.g. the
+        # transport CUPS-query failures behind a "No printers found"). (audit #15)
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s: %(message)s")
+        logging.getLogger("brother_ptouch").setLevel(logging.DEBUG)
     handlers = {
         "image": _cmd_image,
         "text": _cmd_text,
