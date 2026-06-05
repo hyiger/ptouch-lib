@@ -63,6 +63,28 @@ def test_nozzle_text(raw, expected):
     assert nozzle_text(raw) == expected
 
 
+def test_backcompat_submodule_import_paths():
+    # The nozzle API moved to brother_ptouch.nozzle, but the pre-refactor
+    # submodule paths still resolve via module __getattr__ forwarding.
+    from brother_ptouch.codes import NOZZLE_MARKERS as _markers
+    from brother_ptouch.codes import nozzle_band_image as _band
+    from brother_ptouch.codes import nozzle_image as _img
+    from brother_ptouch.render import compose_nozzle as _compose
+    from brother_ptouch.render import nozzle_to_raster as _to_raster
+
+    assert "WC0.4" in _markers
+    assert all(callable(f) for f in (_img, _band, _compose, _to_raster))
+    # forwarders return the real objects from .nozzle
+    import brother_ptouch.nozzle as nz
+    assert _compose is nz.compose_nozzle
+
+
+def test_codes_getattr_still_raises_for_unknown():
+    import brother_ptouch.codes as c
+    with pytest.raises(AttributeError):
+        _ = c.does_not_exist
+
+
 def test_unknown_nozzle_rejected():
     with pytest.raises(ValueError, match="unknown nozzle"):
         normalize_nozzle("HF0.2")  # HF has no 0.2

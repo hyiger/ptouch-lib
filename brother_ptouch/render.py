@@ -647,3 +647,15 @@ def aruco_to_raster(marker_id: int, **kwargs) -> tuple[bytes, int]:
 # Public-API aliases matching the package's documented surface.
 render_image = image_to_raster
 render_text = text_to_raster
+
+
+def __getattr__(name: str):
+    # Back-compat: the Bambu nozzle compose helpers moved to brother_ptouch.nozzle.
+    # Forward the old `brother_ptouch.render.<name>` paths lazily so importing
+    # them still works (a top-level import here would be circular: nozzle imports
+    # render).
+    if name in ("compose_nozzle", "nozzle_to_raster"):
+        from . import nozzle
+
+        return getattr(nozzle, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

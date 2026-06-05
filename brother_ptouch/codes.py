@@ -214,3 +214,23 @@ def aruco_image(
     if quiet_zone_bits > 0:
         img = ImageOps.expand(img, border=quiet_zone_bits, fill=255)
     return img
+
+
+# Back-compat: the Bambu nozzle helpers moved to brother_ptouch.nozzle. Forward
+# the old `brother_ptouch.codes.<name>` import paths lazily (a top-level import
+# would be circular: nozzle imports render, render imports codes).
+_MOVED_TO_NOZZLE = (
+    "NOZZLE_MARKERS",
+    "normalize_nozzle",
+    "nozzle_text",
+    "nozzle_image",
+    "nozzle_band_image",
+)
+
+
+def __getattr__(name: str):
+    if name in _MOVED_TO_NOZZLE:
+        from . import nozzle
+
+        return getattr(nozzle, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
