@@ -9,6 +9,8 @@ on a **Brother PT-P710BT** (P-touch CUBE) on **24 mm TZe tape**.
 - Generate **QR codes** (all versions that fit on 24 mm tape), **1D barcodes**
   (Code 128, EAN, UPC, …), and **ArUco markers** — optionally with a text string
   printed **beside** or **below** the code.
+- Reproduce **Bambu nozzle marker bands** to relabel nozzles for the **H2D/H2C**
+  (e.g. make a third-party Diamondback nozzle read as `WC.4` — hardware-confirmed).
 - Print over **USB** through the host OS print system (CUPS on macOS/Linux, the
   spooler on Windows) — the PT-P710BT is a USB printer-class device on the
   desktop, *not* a serial/Bluetooth device.
@@ -174,12 +176,15 @@ tape) and centered in a **W**-long label; content that won't fit the requested
 width is rejected with a clear error (shrink `--font-size` or widen the size).
 
 ```bash
-# A small asset tag: ArUco marker + "| WC.4" at exactly 16.5 mm × 5 mm
-ptouch aruco --id 4 --dict 4X4_50 --text "| WC.4" --size 16.5x5 --font-size 14 --out tag.bin
+# A small ArUco asset tag at exactly 16.5 mm × 5 mm
+ptouch aruco --id 4 --dict 4X4_50 --text "Marker 4" --size 16.5x5 --font-size 14 --out tag.bin
 
 # Fixed-size text label
 ptouch text --text "RACK A1" --size 40x9 --out rack.bin
 ```
+
+(To reproduce a Bambu nozzle band, use the dedicated [`ptouch nozzle`](#bambu-nozzle-markers)
+command — those markers are a custom Bambu grid, not ArUco.)
 
 On 24 mm tape a sub-18 mm height prints as a centered band with blank tape
 above/below (trim to taste). A sized label defaults to a **0 leading margin**
