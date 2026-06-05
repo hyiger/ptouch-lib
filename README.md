@@ -56,7 +56,7 @@ ptouch aruco   --id N         [--dict 4X4_50|5X5_100|...]      [code opts] [outp
 ptouch list                   # list reachable printers
 
 # code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
-# output opts:  [--printer TARGET | --out FILE] [--preview PNG]
+# output opts:  [--printer TARGET | --out FILE] [--preview PNG] [--size WxH]
 #               [--tape MM] [--cut | --no-cut] [--margin-dots N] [--config FILE]
 ```
 
@@ -69,6 +69,7 @@ ptouch list                   # list reachable printers
 | `--tape MM` | Tape width in mm (default 24; only 24 is fully exercised). |
 | `--margin-dots N` | Leading feed before the print, in dots (default 14 ≈ 2 mm). |
 | `--orientation` | `horizontal` (reads along the label) or `vertical` (reads across the tape). |
+| `--size WxH` | Exact label size in mm (see [Exact size](#exact-size)). |
 | `--config FILE` | TOML config supplying defaults (auto-discovered if omitted). |
 
 Examples:
@@ -119,6 +120,30 @@ Notes:
 - **ArUco** `--dict` is any OpenCV predefined dictionary, with or without the
   `DICT_` prefix (`4X4_50`, `5X5_100`, `6X6_250`, `7X7_1000`, `APRILTAG_36h11`, …);
   a white quiet zone is baked in so detectors can find it.
+
+### Exact size
+
+By default the content auto-fills the ~18 mm printable tape width and the label
+length follows the content. Pass `--size WxH` (millimetres) to pin an exact
+physical size instead — **W** runs along the label length, **H** across the tape
+(max ~18 mm). The content is scaled to **H** tall (centered as a band on the
+tape) and centered in a **W**-long label; content that won't fit the requested
+width is rejected with a clear error (shrink `--font-size` or widen the size).
+
+```bash
+# A small asset tag: ArUco marker + "| WC.4" at exactly 16.5 mm × 5 mm
+ptouch aruco --id 4 --dict 4X4_50 --text "| WC.4" --size 16.5x5 --font-size 14 --out tag.bin
+
+# Fixed-size text label
+ptouch text --text "RACK A1" --size 40x9 --out rack.bin
+```
+
+On 24 mm tape a sub-18 mm height prints as a centered band with blank tape
+above/below (trim to taste). A sized label defaults to a **0 leading margin**
+(so the printed length matches **W**; pass `--margin-dots` to override, and note
+the printer still enforces its own minimum feed/cut). The same control is
+available in the library via `LabelSize`
+(`compose_text(..., size=LabelSize.from_mm(40, 9))`).
 
 The CLI exits non-zero with the printer/stderr message on failure.
 

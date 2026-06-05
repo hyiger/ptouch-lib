@@ -28,6 +28,7 @@ from . import __version__
 from .config import Config, resolve_config
 from .encoder import encode_label
 from .render import (
+    LabelSize,
     compose_aruco,
     compose_barcode,
     compose_image,
@@ -85,6 +86,25 @@ def _add_output_args(p: argparse.ArgumentParser) -> None:
         "--config", metavar="FILE",
         help="TOML config file with defaults (auto-discovered if omitted)",
     )
+    p.add_argument(
+        "--size", metavar="WxH",
+        help="exact label size in mm (W along the length, H across the tape, "
+             "max ~18mm); content is scaled to H and centered in a W-long label",
+    )
+
+
+def _parse_size(value: str | None) -> LabelSize | None:
+    """Parse a ``--size WxH`` argument (mm) into a LabelSize, or None."""
+    if value is None:
+        return None
+    parts = value.lower().replace(" ", "").split("x")
+    if len(parts) != 2:
+        raise ValueError(f"--size must be WxH in mm, e.g. 16.5x5 (got {value!r})")
+    try:
+        width_mm, height_mm = float(parts[0]), float(parts[1])
+    except ValueError:
+        raise ValueError(f"--size must be WxH in mm, e.g. 16.5x5 (got {value!r})") from None
+    return LabelSize.from_mm(width_mm=width_mm, height_mm=height_mm)
 
 
 def _add_text_opts(p: argparse.ArgumentParser) -> None:
@@ -155,7 +175,12 @@ def _build_parser() -> argparse.ArgumentParser:
 def _emit(args: argparse.Namespace, cfg: Config, bitmap: bytes, raster_lines: int, composed) -> int:
     tape = _first(args.tape, cfg.tape, _DEFAULT_TAPE)
     auto_cut = _first(args.auto_cut, cfg.auto_cut, _DEFAULT_AUTO_CUT)
-    margin_dots = _first(args.margin_dots, cfg.margin_dots, _DEFAULT_MARGIN_DOTS)
+    # A sized label's requested length IS the printed length, so default to a
+    # 0 leading margin -- otherwise the ~2mm default feed makes the cut label
+    # longer than the advertised W. An explicit --margin-dots/config still wins.
+    # (The printer enforces its own minimum feed regardless.) (Codex review, PR #3.)
+    default_margin = 0 if args.size else _DEFAULT_MARGIN_DOTS
+    margin_dots = _first(args.margin_dots, cfg.margin_dots, default_margin)
 
     data = encode_label(
         bitmap,
@@ -201,7 +226,7 @@ def _emit(args: argparse.Namespace, cfg: Config, bitmap: bytes, raster_lines: in
 
 def _cmd_image(args: argparse.Namespace) -> int:
     cfg = resolve_config(args.config)
-    composed = compose_image(args.file)
+    composed = compose_image(args.file, size=_parse_size(args.size))
     bitmap, raster_lines = raster_from_composed(composed)
     return _emit(args, cfg, bitmap, raster_lines, composed)
 
@@ -213,6 +238,7 @@ def _cmd_text(args: argparse.Namespace) -> int:
         font_path=_first(args.font, cfg.font),
         font_size=_first(args.font_size, cfg.font_size),
         orientation=_first(args.orientation, cfg.orientation, _DEFAULT_ORIENTATION),
+        size=_parse_size(args.size),
     )
     bitmap, raster_lines = raster_from_composed(composed)
     return _emit(args, cfg, bitmap, raster_lines, composed)
@@ -228,6 +254,7 @@ def _cmd_qr(args: argparse.Namespace) -> int:
         layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
         font_path=_first(args.font, cfg.font),
         font_size=_first(args.font_size, cfg.font_size),
+        size=_parse_size(args.size),
     )
     bitmap, raster_lines = raster_from_composed(composed)
     return _emit(args, cfg, bitmap, raster_lines, composed)
@@ -242,6 +269,7 @@ def _cmd_barcode(args: argparse.Namespace) -> int:
         layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
         font_path=_first(args.font, cfg.font),
         font_size=_first(args.font_size, cfg.font_size),
+        size=_parse_size(args.size),
     )
     bitmap, raster_lines = raster_from_composed(composed)
     return _emit(args, cfg, bitmap, raster_lines, composed)
@@ -256,6 +284,7 @@ def _cmd_aruco(args: argparse.Namespace) -> int:
         layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
         font_path=_first(args.font, cfg.font),
         font_size=_first(args.font_size, cfg.font_size),
+        size=_parse_size(args.size),
     )
     bitmap, raster_lines = raster_from_composed(composed)
     return _emit(args, cfg, bitmap, raster_lines, composed)
