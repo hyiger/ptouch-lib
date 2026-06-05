@@ -300,12 +300,33 @@ to_preview_image(decode(data)).save("preview.png")
 (`encode_label`, `pack_grayscale_bitmap`, `pack_grayscale_row`), the `compose_*`
 builders, and `LabelSize` are exported too — see `brother_ptouch/__init__.py`.
 
+The Bambu nozzle API lives in its own module, `brother_ptouch.nozzle` (and is
+re-exported at the top level): `compose_nozzle`, `nozzle_to_raster`,
+`nozzle_image`, `nozzle_band_image`, `nozzle_text`, `normalize_nozzle`, and the
+decoded `NOZZLE_MARKERS` table. For example, the exact WC0.4 band at true size:
+
+```python
+from brother_ptouch import compose_nozzle, raster_from_composed, LabelSize
+
+bitmap, lines = raster_from_composed(
+    compose_nozzle("WC0.4", size=LabelSize.from_mm(16, 5))
+)
+```
+
 ## How it works
 
 - **Geometry** — 128-dot, 180 dpi print head ⇒ every raster line is exactly 16
   bytes. A label is composed `length × 128` in human-reading orientation, then
   rotated 90° CW so each output row is one raster line, then the raster-line
   order is **reversed** (the hardware un-mirror) before packing.
+- **Render** (`render.py`) — composes a `length × 128` `"L"` image (text, image,
+  QR, barcode, ArUco) in human-reading orientation, then rasterizes it;
+  `LabelSize` / `--size` live here.
+- **Codes** (`codes.py`) — optional QR / barcode / ArUco generators, lazy-imported
+  so the core stays Pillow-only.
+- **Nozzle** (`nozzle.py`) — all the Bambu nozzle logic in one place: the decoded
+  3×7 marker table, the generated grid, the bundled photo bands, and
+  `compose_nozzle`. Pillow-only.
 - **Encoder** (`encoder.py`) — pure, zero-dependency, byte-exact. Emits the
   invalidate / init / raster-mode / print-info / mode / expansion / margin /
   compression / raster-lines / trailer sequence.
