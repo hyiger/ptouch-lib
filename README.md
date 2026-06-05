@@ -153,7 +153,9 @@ print (in white) and the tape is the black background — far less ink, closer m
 **`--generated`** builds the label from the decoded marker grid + a system font
 instead of the photo band — use it for marker-only labels (`--no-text`), custom
 `--text`, or `--no-separator`. It needs no image asset (Pillow only). Here
-`--size`'s height is the marker grid height (e.g. `--size 16x2.2`).
+`--size`'s height is the marker grid height (e.g. `--size 16x2.2`). Note: only the
+default **photo band** has been recognized by an H2D; `--generated` (different
+text font/spacing) hasn't been hardware-tested.
 
 > **Status.** ✅ **Hardware-confirmed:** a printed **WC.4** label from this lib was
 > recognized by an **H2D** (2026-06-04), so relabeling a third-party Diamondback
