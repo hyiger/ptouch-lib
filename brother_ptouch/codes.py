@@ -18,6 +18,8 @@ The libraries are imported lazily so importing this module never requires them.
 
 from __future__ import annotations
 
+from importlib import resources
+
 from PIL import Image, ImageOps
 
 __all__ = [
@@ -29,6 +31,7 @@ __all__ = [
     "barcode_image",
     "aruco_image",
     "nozzle_image",
+    "nozzle_band_image",
     "nozzle_text",
     "normalize_nozzle",
 ]
@@ -329,3 +332,33 @@ def nozzle_image(nozzle: str, *, quiet_zone_modules: int = 1) -> Image.Image:
     if quiet_zone_modules > 0:
         img = ImageOps.expand(img, border=quiet_zone_modules, fill=255)
     return img
+
+
+def nozzle_band_image(nozzle: str) -> Image.Image:
+    """Load the photo-derived band image for a nozzle (white-on-black ``"L"``).
+
+    Unlike :func:`nozzle_image` (which *generates* just the marker from the grid
+    table), this is the full ``[marker] | [text]`` band -- the exact Bambu marker,
+    typeface, and spacing -- cleaned from real nozzle photos and bundled as
+    package data under ``nozzle_bands/`` at the 16x5mm heat-sink-face proportions.
+    Scale it to a printable label with :func:`brother_ptouch.render.compose_nozzle`.
+
+    Args:
+        nozzle: A nozzle name; see :func:`normalize_nozzle` for accepted forms.
+
+    Returns:
+        A Pillow ``Image`` (mode ``"L"``), white content on a black field.
+
+    Raises:
+        ValueError: if no band image is bundled for that nozzle.
+    """
+    key = normalize_nozzle(nozzle)
+    ref = resources.files("brother_ptouch").joinpath("nozzle_bands").joinpath(f"{key}.png")
+    try:
+        with resources.as_file(ref) as path:
+            return Image.open(path).convert("L")
+    except (FileNotFoundError, OSError) as err:
+        raise ValueError(
+            f"no band image bundled for nozzle {key!r}; use the generated "
+            "renderer instead (ptouch nozzle ... --generated)"
+        ) from err

@@ -53,7 +53,7 @@ ptouch text    --text STR     [--font PATH] [--font-size N] [--orientation horiz
 ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
 ptouch barcode --data STR     [--symbology code128|ean13|...]  [code opts] [output opts]
 ptouch aruco   --id N         [--dict 4X4_50|5X5_100|...]      [code opts] [output opts]
-ptouch nozzle  NAME           [--no-text] [--no-invert] [--no-separator] [code opts] [output opts]
+ptouch nozzle  NAME           [--no-invert] [--generated [--no-text] [--no-separator]] [output opts]
 ptouch list                   # list reachable printers
 
 # code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
@@ -124,45 +124,41 @@ Notes:
 
 ### Bambu nozzle markers
 
-`ptouch nozzle NAME` reproduces the small marker the Bambu H2D/H2C hot-end camera
-reads to identify the installed nozzle. These are **not** ArUco — they are a
-custom Bambu 3×7 module grid (decoded from Bambu's catalog photos) carried in a
-built-in table, so the command needs no extra dependencies (Pillow only).
+`ptouch nozzle NAME` reproduces the band the Bambu H2D/H2C hot-end camera reads to
+identify the installed nozzle — the `[marker] │ [text]` strip on the heat-sink
+face. The marker is **not** ArUco; it's a custom Bambu 3×7 module grid.
 
 `NAME` accepts forms like `WC0.4`, `wc.4`, `WC 0.4`, `wc4`, `0.4`, `HF0.6`,
 `HFWC0.8`. Materials: stainless (none), `HF` (high flow), `WC` (tungsten
 carbide), `HFWC`; diameters `0.2`/`0.4`/`0.6`/`0.8` (only `0.2` for stainless).
 
-The band is laid out like the real nozzle: `[marker] │ [text]`, with a `│`
-divider (`--no-separator` to omit) and ~1-module spacing. The text matching the
-nozzle is added by default (the camera reportedly checks marker *and* text);
-`--no-text` prints the marker alone.
-
-The marker is physically white-on-black, so by default the whole label is
-**inverted** — white marker + text on a solid black field — to match the nozzle
-on ordinary black-on-white tape. For **white-on-black tape** (black tape, white
-print) pass `--no-invert`: only the marker/text print (in white) and the tape is
-the black background — far less ink and a closer match.
-
-**Physical size.** The real marker is ~0.74 mm per module → a 7×3 grid of
-~5.2×2.2 mm, sitting in a 16×5 mm heat-sink face. With `--size WxH`, **H is the
-marker grid height** — so `--size 16x2.2` prints the marker at its true size on a
-16 mm band. At 180 dpi a module is ~5 dots (~0.71 mm), the closest the head does.
+By default it prints the **exact band** — Bambu's real marker, typeface, and
+spacing — from a cleaned, bundled image of each nozzle (under
+`brother_ptouch/nozzle_bands/`, ~2 KB each). The band is the **16×5 mm** heat-sink
+face, so with no `--size` it prints at true physical size; pass `--size` to scale.
 
 ```bash
-# WC 0.4 marker + "WC.4", actual nozzle size, black-on-white tape
-ptouch nozzle WC0.4 --size 16x2.2 --out nz.bin --preview nz.png
+# WC 0.4 — exact band, actual nozzle size, ordinary black-on-white tape
+ptouch nozzle WC0.4 --out nz.bin --preview nz.png
 
 # Same, for black (white-on-black) tape
-ptouch nozzle WC0.4 --size 16x2.2 --no-invert --printer "$P"
+ptouch nozzle WC0.4 --no-invert --printer "$P"
 ```
 
+**Tape polarity.** The band is white-on-black. On normal **black-on-white tape**
+the printer lays down the black field and leaves the marker/text as bare tape
+(default). On **white-on-black tape** pass `--no-invert`: only the marker/text
+print (in white) and the tape is the black background — far less ink, closer match.
+
+**`--generated`** builds the label from the decoded marker grid + a system font
+instead of the photo band — use it for marker-only labels (`--no-text`), custom
+`--text`, or `--no-separator`. It needs no image asset (Pillow only). Here
+`--size`'s height is the marker grid height (e.g. `--size 16x2.2`).
+
 > **Status / caveats.** All 13 markers are verified (the WC markers match
-> third-party Diamondback nozzles bit-for-bit). The marker is the camera's
-> primary, pattern-recognition check and is reproduced exactly; the human-readable
-> text is rendered in a system font (close, not Bambu's exact typeface). Whether
-> the H2D *accepts* a printed replica is **not yet confirmed on hardware** —
-> consider it experimental.
+> third-party Diamondback nozzles bit-for-bit). The bundled bands are cleaned from
+> real nozzle photos. Whether the H2D actually *accepts* a printed replica is
+> **not yet confirmed on hardware** — consider it experimental.
 
 ### Exact size
 

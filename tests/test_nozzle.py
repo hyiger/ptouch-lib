@@ -96,6 +96,36 @@ def test_nozzle_image_quiet_zone_is_white():
 
 
 # --------------------------------------------------------------------------- #
+# bundled photo bands (the exact, default source)
+# --------------------------------------------------------------------------- #
+
+
+def test_every_marker_has_a_bundled_band():
+    from brother_ptouch.codes import nozzle_band_image
+
+    for key in NOZZLE_MARKERS:
+        img = nozzle_band_image(key)
+        assert img.mode == "L"
+        assert img.getextrema() == (0, 255), key  # white content on a black field
+        # 16x5mm face -> aspect ~3.2
+        assert 2.6 < img.width / img.height < 3.8, key
+
+
+def test_photo_band_missing_raises():
+    from brother_ptouch.codes import nozzle_band_image
+
+    with pytest.raises(ValueError, match="diameter|unknown|no band image"):
+        nozzle_band_image("ZZ9")
+
+
+def test_photo_band_roundtrip_identity():
+    # The default (photo) path prints un-mirrored / uncorrupted.
+    composed = compose_nozzle("WC0.4", size=LabelSize.from_mm(16, 5))
+    preview = _pipeline_preview(composed)
+    assert preview.tobytes() == _threshold(composed).tobytes()
+
+
+# --------------------------------------------------------------------------- #
 # compose + invert
 # --------------------------------------------------------------------------- #
 
@@ -122,7 +152,9 @@ def test_true_size_marker_below_min_code_dots():
     # The real nozzle marker is ~2.2mm (~15 dots) tall -- under the QR/barcode
     # MIN_CODE_DOTS floor. The nozzle path must still render it (not raise).
     size = LabelSize.from_mm(width_mm=5.2, height_mm=2.2)
-    img = compose_nozzle("WC0.4", text=None, invert=False, quiet_zone_modules=0, size=size)
+    img = compose_nozzle(
+        "WC0.4", source="generated", text=None, invert=False, quiet_zone_modules=0, size=size
+    )
     # marker scaled to ~5 dots/module -> ~15 dots tall, well under MIN_CODE_DOTS (24)
     ys = [y for y in range(img.height) if any(img.load()[x, y] < 128 for x in range(img.width))]
     marker_h = ys[-1] - ys[0] + 1
@@ -156,7 +188,9 @@ def test_marker_grid_survives_pipeline():
     # clean integer-scaled block we can downsample.
     nozzle = "WC0.6"
     grid = NOZZLE_MARKERS[nozzle]
-    composed = compose_nozzle(nozzle, text=None, invert=False, quiet_zone_modules=0)
+    composed = compose_nozzle(
+        nozzle, source="generated", text=None, invert=False, quiet_zone_modules=0
+    )
     preview = _pipeline_preview(composed).convert("L")
     px = preview.load()
     w, h = preview.size
@@ -190,15 +224,22 @@ def test_cli_nozzle_to_out_decodes_clean(tmp_path):
     assert decoded.warnings == []
 
 
-def test_cli_nozzle_sized_label(tmp_path):
-    out = tmp_path / "s.bin"
-    # Actual nozzle size: 2.2mm-tall marker (the --size height is the marker
-    # grid height) on a 16mm-long band. The nozzle path drops the ~2mm padding.
-    rc = main(["nozzle", "WC0.4", "--no-text", "--size", "16x2.2", "--out", str(out)])
+def test_cli_nozzle_photo_default_is_actual_size(tmp_path):
+    # No --size: the photo band defaults to the real 16x5mm heat-sink face.
+    out = tmp_path / "p.bin"
+    rc = main(["nozzle", "WC0.4", "--out", str(out)])
     assert rc == 0
     decoded = decode(out.read_bytes())
-    # 16 mm at 180 dpi ~= 113 raster lines (the exact requested length).
-    assert abs(decoded.raster_line_count - round(16 * 180 / 25.4)) <= 1
+    assert abs(decoded.raster_line_count - round(16 * 180 / 25.4)) <= 1  # 16 mm long
+
+
+def test_cli_nozzle_generated_sized_label(tmp_path):
+    out = tmp_path / "s.bin"
+    # --generated: marker-only, --size height is the marker grid height.
+    rc = main(["nozzle", "WC0.4", "--generated", "--no-text", "--size", "16x2.2", "--out", str(out)])
+    assert rc == 0
+    decoded = decode(out.read_bytes())
+    assert abs(decoded.raster_line_count - round(16 * 180 / 25.4)) <= 1  # 16 mm long
 
 
 def test_cli_unknown_nozzle_returns_error(tmp_path):

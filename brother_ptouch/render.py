@@ -607,6 +607,7 @@ def compose_aruco(
 def compose_nozzle(
     nozzle: str,
     *,
+    source: str = "photo",
     text: str | None = None,
     invert: bool = True,
     quiet_zone_modules: int = 0,
@@ -616,33 +617,47 @@ def compose_nozzle(
     font_size: int | None = None,
     size: LabelSize | None = None,
 ) -> Image.Image:
-    """Compose a Bambu nozzle marker (optionally with text) into a printable label.
+    """Compose a Bambu nozzle label, ready for :func:`raster_from_composed`.
 
-    The nozzle marker is physically white-on-black (white modules on the black
-    heat-sink), so by default the whole composed label is **inverted** -- a white
-    marker (and white text) on a solid black field -- to match the nozzle when
-    printed on ordinary black-on-white tape. Pass ``invert=False`` for
-    white-on-black tape (already black where the tape shows through).
+    Two sources:
 
-    Because the marker is only a few millimetres on the nozzle, you almost always
-    want an explicit ``size`` (e.g. ``LabelSize.from_mm(...)``); the auto fill
-    would scale it to the full tape width.
+    - ``source="photo"`` (default) reproduces the **exact** band -- Bambu's real
+      marker, typeface, and spacing -- from the bundled photo-derived band image
+      (:func:`brother_ptouch.codes.nozzle_band_image`). The band is the 16x5mm
+      heat-sink face, so ``size=LabelSize.from_mm(16, 5)`` prints it at true size.
+      The ``text``/``layout``/``separator``/font/``quiet_zone_modules`` args are
+      ignored -- they are baked into the photo.
+    - ``source="generated"`` builds the label from the decoded marker grid plus a
+      system font; use it for marker-only labels, custom text, or nozzles with no
+      bundled band. Here ``size``'s height is the marker grid height.
+
+    The nozzle band is physically white-on-black, so by default the result is
+    arranged for ordinary **black-on-white tape** (the printer lays down the black
+    field; the marker/text stay white). Pass ``invert=False`` for **white-on-black
+    tape** (the tape is the black background; only the marker/text print, in white).
 
     Args:
         nozzle: A nozzle name; see :func:`brother_ptouch.codes.normalize_nozzle`.
-        text: Optional text printed alongside the marker (e.g. ``"WC.4"``).
-        invert: Invert the composed label to white-on-black (default ``True``).
-        quiet_zone_modules: Black border around the marker, in marker modules
-            (default 0 -- the inverted black field / black tape is the surround).
-        layout: ``"side"`` (text beside the marker) or ``"stack"`` (text below).
-        separator: Draw the ``|`` divider between marker and text (the real
-            nozzle band has one); only applies to the ``"side"`` layout with text.
-        font_path, font_size: Font for the accompanying text.
+        source: ``"photo"`` (exact, default) or ``"generated"``.
+        text: (generated only) text beside the marker; ``None`` for none.
+        invert: ``True`` (default) for black-on-white tape, ``False`` for black tape.
+        quiet_zone_modules: (generated only) black border around the marker.
+        layout, separator, font_path, font_size: (generated only) text layout/font.
         size: An explicit :class:`LabelSize`; ``None`` keeps the auto behaviour.
 
     Returns:
         A Pillow ``Image`` (mode ``"L"``), ready for :func:`raster_from_composed`.
     """
+    if source not in ("photo", "generated"):
+        raise ValueError(f"source must be 'photo' or 'generated', got {source!r}")
+
+    if source == "photo":
+        band = codes.nozzle_band_image(nozzle)  # white content on a black field
+        # The printer prints dark pixels. Black-on-white tape: feed the band as-is
+        # (white-on-black) so the black field is inked and the content is bare tape.
+        # White-on-black tape: feed the inverse so only the content prints (white).
+        return compose_image(band if invert else ImageOps.invert(band), size=size)
+
     img = codes.nozzle_image(nozzle, quiet_zone_modules=quiet_zone_modules)
     # Module size (dots) the marker will scale to, so gaps/divider track the real
     # band: ~1 module between marker, "|", and text; divider ~0.4 module wide.

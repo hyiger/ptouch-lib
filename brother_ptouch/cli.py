@@ -170,11 +170,16 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_code_opts(p_ar)
     _add_output_args(p_ar)
 
-    p_nz = sub.add_parser("nozzle", help="print a Bambu nozzle marker (white-on-black)")
+    p_nz = sub.add_parser("nozzle", help="print a Bambu nozzle label (white-on-black)")
     p_nz.add_argument("nozzle", help="nozzle name, e.g. WC0.4, HF0.6, HFWC0.8, 0.4")
     p_nz.add_argument(
+        "--generated", action="store_true",
+        help="build the label from the decoded marker grid + a system font "
+             "(customizable) instead of the exact photo-derived band (default)",
+    )
+    p_nz.add_argument(
         "--no-text", dest="no_text", action="store_true",
-        help="print the marker only, without the human-readable text",
+        help="(--generated only) print the marker alone, without the text",
     )
     p_nz.add_argument(
         "--invert", default=True, action=argparse.BooleanOptionalAction,
@@ -320,18 +325,27 @@ def _cmd_nozzle(args: argparse.Namespace) -> int:
     from .codes import nozzle_text
 
     cfg = resolve_config(args.config)
-    text = None if args.no_text else _first(args.text, nozzle_text(args.nozzle))
-    composed = compose_nozzle(
-        args.nozzle,
-        text=text,
-        invert=args.invert,
-        quiet_zone_modules=args.quiet_zone,
-        separator=args.separator,
-        layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
-        font_path=_first(args.font, cfg.font),
-        font_size=_first(args.font_size, cfg.font_size),
-        size=_parse_size(args.size),
-    )
+    size = _parse_size(args.size)
+    if args.generated:
+        text = None if args.no_text else _first(args.text, nozzle_text(args.nozzle))
+        composed = compose_nozzle(
+            args.nozzle,
+            source="generated",
+            text=text,
+            invert=args.invert,
+            quiet_zone_modules=args.quiet_zone,
+            separator=args.separator,
+            layout=_first(args.layout, cfg.layout, _DEFAULT_LAYOUT),
+            font_path=_first(args.font, cfg.font),
+            font_size=_first(args.font_size, cfg.font_size),
+            size=size,
+        )
+    else:
+        # The bundled band IS the 16x5mm heat-sink face -- default to that exact
+        # physical size so the printed label matches the nozzle 1:1.
+        if size is None:
+            size = LabelSize.from_mm(width_mm=16, height_mm=5)
+        composed = compose_nozzle(args.nozzle, source="photo", invert=args.invert, size=size)
     bitmap, raster_lines = raster_from_composed(composed)
     return _emit(args, cfg, bitmap, raster_lines, composed)
 
