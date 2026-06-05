@@ -49,3 +49,14 @@ def test_list_reports_no_printers_when_system_present(capsys, monkeypatch):
     monkeypatch.setattr("brother_ptouch.transport.has_print_system", lambda: True)
     assert main(["list"]) == 0
     assert "No printers found" in capsys.readouterr().err
+
+
+def test_has_print_system_probes_for_cups_tools(monkeypatch):
+    import brother_ptouch.transport as t
+
+    if t.sys.platform == "win32":
+        assert t.has_print_system() is True
+    else:
+        # No CUPS client tools on PATH or in /usr/sbin -> not available.
+        monkeypatch.setattr(t.shutil, "which", lambda *a, **k: None)
+        assert t.has_print_system() is False

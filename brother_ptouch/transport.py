@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -73,9 +74,18 @@ def has_print_system() -> bool:
     """True if a supported print system is available (CUPS or the Windows spooler).
 
     Lets callers tell "no print system" apart from "system reachable but no
-    printers" instead of conflating both as an empty list.
+    printers" instead of conflating both as an empty list. On macOS/Linux this
+    actually probes for the CUPS client tools (a platform check alone would say
+    True on a host that has no CUPS installed). A present-but-stopped cupsd still
+    reports True -- that case surfaces as the "check the system is running" hint.
     """
-    return sys.platform == "win32" or _is_cups()
+    if sys.platform == "win32":
+        return True
+    if _is_cups():
+        return any(
+            shutil.which(t) or shutil.which(t, path=_SBIN) for t in ("lpstat", "lp")
+        )
+    return False
 
 
 def _run_cups_tool(tool: str, args: list[str]) -> str:
