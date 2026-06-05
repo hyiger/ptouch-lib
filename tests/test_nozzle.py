@@ -233,6 +233,15 @@ def test_cli_nozzle_photo_default_is_actual_size(tmp_path):
     assert abs(decoded.raster_line_count - round(16 * 180 / 25.4)) <= 1  # 16 mm long
 
 
+def test_cli_nozzle_default_suppresses_feed_margin(tmp_path):
+    # The implicit 16x5mm default must also zero the leading feed margin, so the
+    # cut label is exactly 16mm -- not 16mm + ~2mm feed. (Codex review, PR #5.)
+    out = tmp_path / "m.bin"
+    rc = main(["nozzle", "WC0.4", "--out", str(out)])
+    assert rc == 0
+    assert decode(out.read_bytes()).margin_dots == 0
+
+
 def test_cli_nozzle_generated_sized_label(tmp_path):
     out = tmp_path / "s.bin"
     # --generated: marker-only, --size height is the marker grid height.

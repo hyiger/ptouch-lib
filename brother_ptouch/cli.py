@@ -325,6 +325,12 @@ def _cmd_nozzle(args: argparse.Namespace) -> int:
     from .codes import nozzle_text
 
     cfg = resolve_config(args.config)
+    # The bundled band IS the 16x5mm heat-sink face: when no size is given, default
+    # to that exact physical size so the photo band prints 1:1. Set args.size (not
+    # just the parsed value) so _emit() also suppresses the default leading feed
+    # margin -- otherwise the "actual size" label would be ~2mm longer than 16mm.
+    if not args.generated and args.size is None:
+        args.size = "16x5"
     size = _parse_size(args.size)
     if args.generated:
         text = None if args.no_text else _first(args.text, nozzle_text(args.nozzle))
@@ -341,10 +347,6 @@ def _cmd_nozzle(args: argparse.Namespace) -> int:
             size=size,
         )
     else:
-        # The bundled band IS the 16x5mm heat-sink face -- default to that exact
-        # physical size so the printed label matches the nozzle 1:1.
-        if size is None:
-            size = LabelSize.from_mm(width_mm=16, height_mm=5)
         composed = compose_nozzle(args.nozzle, source="photo", invert=args.invert, size=size)
     bitmap, raster_lines = raster_from_composed(composed)
     return _emit(args, cfg, bitmap, raster_lines, composed)
