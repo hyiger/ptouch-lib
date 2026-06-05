@@ -55,7 +55,7 @@ ptouch text    --text STR     [--font PATH] [--font-size N] [--orientation horiz
 ptouch qr      --data STR     [--ec L|M|Q|H] [--qr-version N] [code opts] [output opts]
 ptouch barcode --data STR     [--symbology code128|ean13|...]  [code opts] [output opts]
 ptouch aruco   --id N         [--dict 4X4_50|5X5_100|...]      [code opts] [output opts]
-ptouch nozzle  NAME           [--no-invert] [--generated [--no-text] [--no-separator]] [output opts]
+ptouch nozzle  NAME           [--no-invert] [--generated [--no-text] [--no-separator] [--quiet-zone N] [code opts]] [output opts]
 ptouch list                   # list reachable printers
 
 # code opts:    [--text STR] [--layout side|stack] [--font PATH] [--font-size N]
@@ -296,7 +296,9 @@ to_preview_image(decode(data)).save("preview.png")
 ```
 
 `render_image` accepts a path or a Pillow `Image`; both render functions return
-`(bitmap, raster_lines)` ready for `encode_label`.
+`(bitmap, raster_lines)` ready for `encode_label`. The lower-level encoder
+(`encode_label`, `pack_grayscale_bitmap`, `pack_grayscale_row`), the `compose_*`
+builders, and `LabelSize` are exported too — see `brother_ptouch/__init__.py`.
 
 ## How it works
 
@@ -316,12 +318,18 @@ to_preview_image(decode(data)).save("preview.png")
 ## Develop
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev-all]"   # dev tools + code extras, so the full suite runs
 pytest -q
 ruff check .
+mypy brother_ptouch
 ```
 
-CI runs the test suite on Python 3.10–3.13 (Linux) plus a macOS smoke test.
+(`.[dev]` is the lighter install — pytest, ruff, mypy, pytest-cov — but the
+code-generator tests then skip; `.[dev-all]` adds the QR/barcode/ArUco extras.)
+
+CI runs the test suite on Python 3.10–3.14 (Linux) and macOS (3.12, full suite
+incl. the code extras), a lint job (ruff + mypy), and a build job that installs
+the wheel into a clean venv and verifies the bundled data files.
 
 ## License
 
