@@ -133,7 +133,7 @@ def list_printers() -> list[PrinterDevice]:
             return _list_cups_printers()
         return []
     except Exception as err:  # never raises -- but record why for diagnostics
-        _log.warning("could not query the print system: %s: %s", type(err).__name__, err)
+        _log.debug("could not query the print system: %s: %s", type(err).__name__, err)
         return []
 
 
@@ -163,7 +163,7 @@ def _list_cups_printers() -> list[PrinterDevice]:
                 PrinterDevice(name, name, bool(_PRINTER_PATTERN.search(f"{name} {uri}")))
             )
     except Exception as err:
-        _log.warning("lpstat -v failed: %s: %s", type(err).__name__, err)  # fall through
+        _log.debug("lpstat -v failed: %s: %s", type(err).__name__, err)  # fall through
 
     # 2. Available USB devices not already installed as a queue.
     #    Scope to the usb scheme: a bare `lpinfo -v` also runs the snmp/dnssd
@@ -183,7 +183,7 @@ def _list_cups_printers() -> list[PrinterDevice]:
                 PrinterDevice(uri, _prettify_usb_uri(uri), bool(_PRINTER_PATTERN.search(uri)))
             )
     except Exception as err:  # lpinfo may need elevated privileges on some distros
-        _log.warning("lpinfo failed: %s: %s", type(err).__name__, err)
+        _log.debug("lpinfo failed: %s: %s", type(err).__name__, err)
 
     return devices
 
