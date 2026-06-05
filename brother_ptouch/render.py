@@ -163,6 +163,21 @@ def _apply_length(canvas: Image.Image, size: LabelSize | None) -> Image.Image:
     out.paste(canvas, ((target - canvas.width) // 2, 0))
     return out
 
+
+def _guard_length(width_dots: int) -> None:
+    """Reject an over-long render *before* a giant Pillow allocation.
+
+    The auto-sized compose paths compute a content width and then allocate /
+    resize an image of that width; without this, an extreme-aspect input could
+    allocate gigabytes before :func:`raster_from_composed` enforces the cap.
+    """
+    if width_dots > MAX_RASTER_LINES:
+        raise ValueError(
+            f"content is {width_dots} dots (~{width_dots / DOTS_PER_MM:.0f}mm) long, "
+            f"exceeding the safety cap of {MAX_RASTER_LINES} raster lines (~5 MB)"
+        )
+
+
 # System sans-serif candidates, tried in order before falling back to the
 # scalable font Pillow bundles (DejaVuSans via load_default(size=...)).
 _SYSTEM_FONT_CANDIDATES = (
@@ -210,9 +225,9 @@ def _block_width(font: ImageFont.FreeTypeFont, lines: list[str]) -> int:
 
 
 def _split_lines(text: str) -> list[str]:
-    lines = text.split("\n")
-    # Keep interior blank lines but ensure at least one line to render.
-    return lines if lines else [""]
+    # str.split("\n") always yields at least [""], so this keeps interior blank
+    # lines and never returns an empty list.
+    return text.split("\n")
 
 
 def _fit_horizontal(
@@ -248,6 +263,7 @@ def _render_text_block(font: ImageFont.FreeTypeFont, lines: list[str]) -> Image.
     line_h = _line_height(font)
     block_w = _block_width(font, lines)
     block_h = line_h * len(lines)
+    _guard_length(block_w)  # don't allocate a giant block for extreme text
     block = Image.new("L", (block_w, block_h), 255)
     draw = ImageDraw.Draw(block)
     for i, line in enumerate(lines):
@@ -299,6 +315,13 @@ def compose_text(
 
     foot_w, foot_h = footprint.size
     _require_band_fit(foot_h, band, size)
+    # Even without an explicit height band, content taller than the 128-dot tape
+    # would be silently cropped by the centered paste below -- reject it instead.
+    if foot_h > PRINT_HEAD_DOTS:
+        raise ValueError(
+            f"text is {foot_h} dots tall, exceeding the {PRINT_HEAD_DOTS}-dot tape "
+            "height even at the minimum font size -- use fewer lines or shorter text"
+        )
 
     width = foot_w + 2 * HORIZONTAL_PADDING_DOTS
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
@@ -331,6 +354,7 @@ def compose_image(source: ImageSource, *, size: LabelSize | None = None) -> Imag
         raise ValueError("source image has a zero dimension")
     band = _band_for(size, PRINT_HEAD_DOTS)
     new_w = max(1, round(w * band / h))
+    _guard_length(new_w)  # reject extreme-aspect images before the resize allocates
     if (new_w, band) != (w, h):
         img = img.resize((new_w, band), Image.LANCZOS)
     if band != PRINT_HEAD_DOTS:
@@ -517,6 +541,7 @@ def compose_code_label(
         sep_gap = g if sw else 0
         text_w = (g + sw + sep_gap + block.width) if block else 0
         width = 2 * pad + cw + text_w
+        _guard_length(width)
         canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
         canvas.paste(fitted, (pad, (PRINT_HEAD_DOTS - ch) // 2))
         if block:
@@ -535,6 +560,7 @@ def compose_code_label(
         cw, ch = fitted.size
         content_h = ch + GAP_DOTS + block.height
         width = max(cw, block.width) + 2 * pad
+        _guard_length(width)
         canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
         top = (PRINT_HEAD_DOTS - content_h) // 2
         canvas.paste(fitted, ((width - cw) // 2, top))
@@ -544,6 +570,7 @@ def compose_code_label(
     fitted = _fit_code(code, is_square, band, mcd)
     cw, ch = fitted.size
     width = cw + 2 * pad
+    _guard_length(width)
     canvas = Image.new("L", (width, PRINT_HEAD_DOTS), 255)
     canvas.paste(fitted, ((width - cw) // 2, (PRINT_HEAD_DOTS - ch) // 2))
     return _apply_length(canvas, size)
