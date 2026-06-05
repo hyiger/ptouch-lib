@@ -89,4 +89,9 @@ uv build                                               # wheel + sdist
 - All changes go through a **feature branch → PR → CI (pytest + ruff on 3.10–3.13
   + macOS) → Codex review (`@codex review`, resolve every thread) → merge**. Don't
   push to `main` directly.
+- **Check for documentation drift before merging any PR** — scan the docs the
+  change could outdate (`README.md`, this file, public docstrings + their
+  cross-references, `ptouch.example.toml`/config, `--help` examples) and update
+  them in the *same* PR. Grep for renamed/moved symbols to catch stale references;
+  verify any doc snippet actually runs. Never merge code whose docs no longer match.
 - Backlog and audit findings live in **GitHub issues**.
