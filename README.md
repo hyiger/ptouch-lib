@@ -81,16 +81,25 @@ Examples:
 # Find the printer
 ptouch list
 
-# Print an image
+# Print an image file
 ptouch image --file logo.png --printer "usb://Brother/PT-P710BT?serial=000M5G671606"
-
-# Print vertical text at a fixed size
-ptouch text --text "PLA Black" --font-size 40 --orientation vertical \
-  --printer "usb://Brother/PT-P710BT?serial=000M5G671606"
-
-# Render to a file (no hardware) + a preview PNG
-ptouch text --text "ABS White" --out /tmp/label.bin --preview /tmp/label.png
 ```
+
+Vertical text at a fixed font size:
+
+```bash
+ptouch text --text "PLA Black" --font-size 40 --orientation vertical --out pla.bin --preview pla.png
+```
+
+![PLA Black label, vertical text](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/text-vertical.png)
+
+Render to a file with a preview PNG (no printer needed — `--preview` writes exactly what prints):
+
+```bash
+ptouch text --text "ABS White" --out label.bin --preview label.png
+```
+
+![ABS White label](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/text-horizontal.png)
 
 ### Codes (QR, barcode, ArUco)
 
@@ -98,19 +107,37 @@ Each code command optionally takes a `--text` string printed alongside the code
 — `--layout side` (default) places it beside the code; `--layout stack` puts it
 below, sharing the tape width.
 
+QR with a name beside it (auto-fits the smallest version for the payload):
+
 ```bash
-# QR with a name beside it (auto-fits the smallest version for the payload)
-ptouch qr --data "https://example.com/i/42" --text "Bin 42" --out /tmp/qr.bin
-
-# A short QR stacked above its label
-ptouch qr --data "PLA-0042" --text "PLA Black" --layout stack --printer "$P"
-
-# Code 128 barcode with the part number below it
-ptouch barcode --data "ABC-12345" --symbology code128 --text "Part ABC" --layout stack --out /tmp/bc.bin
-
-# An ArUco marker (OpenCV dictionaries) with its id
-ptouch aruco --id 7 --dict 4X4_50 --text "Marker 7" --out /tmp/ar.bin
+ptouch qr --data "https://example.com/i/42" --text "Bin 42" --out qr.bin --preview qr.png
 ```
+
+![QR code with "Bin 42" beside it](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/qr-side.png)
+
+A short QR stacked above its label:
+
+```bash
+ptouch qr --data "PLA-0042" --text "PLA Black" --layout stack --out qr.bin --preview qr.png
+```
+
+![QR code stacked above "PLA Black"](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/qr-stack.png)
+
+Code 128 barcode with the part number below it:
+
+```bash
+ptouch barcode --data "ABC-12345" --symbology code128 --text "Part ABC" --layout stack --out bc.bin --preview bc.png
+```
+
+![Code 128 barcode above "Part ABC"](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/barcode-stack.png)
+
+An ArUco marker (OpenCV dictionaries) with its id:
+
+```bash
+ptouch aruco --id 7 --dict 4X4_50 --text "Marker 7" --out ar.bin --preview ar.png
+```
+
+![ArUco marker beside "Marker 7"](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/aruco.png)
 
 Notes:
 - **QR** auto-picks the smallest version for the data; any version that
@@ -142,8 +169,12 @@ face, so with no `--size` it prints at true physical size; pass `--size` to scal
 ```bash
 # WC 0.4 — exact band, actual nozzle size, ordinary black-on-white tape
 ptouch nozzle WC0.4 --out nz.bin --preview nz.png
+```
 
-# Same, for black (white-on-black) tape
+![WC.4 nozzle band, white-on-black](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/nozzle-wc04.png)
+
+```bash
+# Same, for black (white-on-black) tape (looks the same; the tape is the black)
 ptouch nozzle WC0.4 --no-invert --printer "$P"
 ```
 
@@ -175,13 +206,21 @@ physical size instead — **W** runs along the label length, **H** across the ta
 tape) and centered in a **W**-long label; content that won't fit the requested
 width is rejected with a clear error (shrink `--font-size` or widen the size).
 
-```bash
-# A small ArUco asset tag at exactly 16.5 mm × 5 mm
-ptouch aruco --id 4 --dict 4X4_50 --text "Marker 4" --size 16.5x5 --font-size 14 --out tag.bin
+A small ArUco asset tag at exactly 16.5 mm × 5 mm:
 
-# Fixed-size text label
-ptouch text --text "RACK A1" --size 40x9 --out rack.bin
+```bash
+ptouch aruco --id 4 --dict 4X4_50 --text "ID 4" --size 16.5x5 --font-size 14 --out tag.bin --preview tag.png
 ```
+
+![ArUco tag "ID 4" at 16.5×5 mm](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/aruco-tag.png)
+
+A fixed-size text label (40 × 9 mm):
+
+```bash
+ptouch text --text "RACK A1" --size 40x9 --out rack.bin --preview rack.png
+```
+
+![RACK A1 at 40×9 mm](https://raw.githubusercontent.com/hyiger/ptouch-lib/main/docs/img/text-rack.png)
 
 (To reproduce a Bambu nozzle band, use the dedicated [`ptouch nozzle`](#bambu-nozzle-markers)
 command — those markers are a custom Bambu grid, not ArUco.)
